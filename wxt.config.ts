@@ -20,10 +20,18 @@ export default defineConfig({
         "48": "/icons/icon-48.png",
       },
     },
-    permissions: ["activeTab", "storage"],
+    permissions: ["activeTab", "storage", "alarms"],
     // Trang bắt tay đăng nhập: chỉ web origin được gửi message về extension.
     externally_connectable: { matches: ["https://braintot-web-jsgeeh2ixa-de.a.run.app/*"] },
-    host_permissions: ["*://*.youtube.com/*", "*://*.tiktok.com/*", "*://*.facebook.com/*"],
+    host_permissions: [
+      "*://*.youtube.com/*",
+      "*://*.tiktok.com/*",
+      "*://*.facebook.com/*",
+      // Backend NestJS (sync pending-links) - spec 16 T5.
+      "http://localhost:3001/*",
+      "http://127.0.0.1:3001/*",
+      "https://braintot.tonythaniel.com/*",
+    ],
     web_accessible_resources: [
       {
         resources: ["mascot/*"],
