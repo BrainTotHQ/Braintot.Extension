@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BrainTot Icon</title>
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 512px;
+        height: 512px;
+        margin: 0;
+        padding: 0;
+        overflow: hidden;
+        background: transparent;
+      }
+
+      .icon {
+        position: absolute;
+        top: 0;
+        left: 0;
+        display: grid;
+        place-items: center;
+        width: 512px;
+        height: 512px;
+        overflow: hidden;
+        border-radius: 110px;
+        background: linear-gradient(135deg, #40B0E2 0%, #1591F5 100%);
+      }
+
+      .mascot {
+        width: 456px;
+        height: 456px;
+        overflow: hidden;
+        border: 16px solid #FFFFFF;
+        border-radius: 50%;
+        background: #12264F;
+      }
+
+      .mascot img {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        object-position: center;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="icon" aria-label="BrainTot">
+      <div class="mascot">
+        <img src="../public/mascot/logo-mark.png" width="1024" height="1024" alt="Mascot BrainTot đeo kính và mũ tốt nghiệp">
+      </div>
+    </main>
+  </body>
+</html>
