@@ -20,13 +20,19 @@ import {
   normalizeCaptureUrl,
   type CanonicalCapture,
 } from "../../domain/url-canonicalizer";
+import { getAuthEmail, initBackendAuth, isAuthExpired, signOut } from "../../lib/backend-auth";
+import { engineVideoId, webFlashcardsUrl } from "../../lib/backend-config";
+import { MSG_LINK_WEB, MSG_SYNC_NOW } from "../../lib/messages";
+import { deleteRemoteLink } from "../../lib/queue-api";
 import { detailText, displayTitle, formatSavedAgo, thumbnailUrl } from "../../lib/queue-display";
 import type { QueueStore } from "../../lib/queue-store";
+import { LinkGate } from "./LinkGate";
+import { useLinkStatus } from "./useLinkStatus";
 import { useVideoTitles } from "./useVideoTitles";
 
 // Copy verbatim từ plan spec/24 — sạch emoji (design language mobile).
 const TITLE_COPY = "Hàng đợi";
-const SUBTITLE_SUFFIX_COPY = "video · demo xử lý giả lập";
+const SUBTITLE_SUFFIX_COPY = "video · chưa bật nhắc ôn";
 const PENDING_CHIP_COPY = "Đang chờ";
 const EMPTY_TITLE_COPY = "Chưa có gì ở đây";
 const EMPTY_CHIP_COPY = "Sẵn sàng cho bài học đầu tiên?";
@@ -34,7 +40,7 @@ const EMPTY_HELPER_COPY = "Lưu video hay bạn vừa xem, BrainTot tự tách c
 const EMPTY_STEPS_COPY = [
   "Mở video YouTube, TikTok hoặc Reels",
   "Bấm extension BrainTot: dán link hoặc Lưu trang này",
-  "Chờ xử lý — trạng thái đổi ngay trong hàng đợi",
+  "Chờ tách câu — bài học xuất hiện trên Web",
 ];
 const PASTE_PLACEHOLDER_COPY = "Dán link video để thêm";
 const PASTE_ADD_TITLE_COPY = "Thêm link vào hàng đợi";
@@ -106,10 +112,13 @@ interface QueueViewProps {
 
 export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
   const [links, setLinks] = useState<PendingLink[] | null>(null);
+  const [authEmail, setAuthEmail] = useState<string | null>(null);
+  const [authExpired, setAuthExpired] = useState(false);
   const [filter, setFilter] = useState<QueueFilter>("all");
   const [pasteUrl, setPasteUrl] = useState("");
   const [pasteError, setPasteError] = useState(false);
   const videoTitles = useVideoTitles(links);
+  const linkStatus = useLinkStatus();
 
   // Load mỗi lần mở view (null = đang tải, chưa render list lẫn badge).
   useEffect(() => {
@@ -122,34 +131,50 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
       .catch(() => {
         if (!cancelled) setLinks([]);
       });
+    // Cập nhật trạng thái liên kết web (spec/17) — google mode chỉ đọc storage.
+    void initBackendAuth().finally(() => {
+      if (cancelled) return;
+      setAuthEmail(getAuthEmail());
+      setAuthExpired(isAuthExpired());
+    });
     return () => {
       cancelled = true;
     };
   }, [store]);
 
-  // Bộ xử lý giả lập ở background đổi trạng thái link: popup hỏi lại storage mỗi giây
-  // khi còn link chưa xong.
+  // Server-first (spec/61): khi đã liên kết, mở popup thì kéo trạng thái về một lần; còn link
+  // đang chờ/xử lý thì hỏi lại mỗi 3 giây (như web) cho tới khi xong.
+  const isLinked = linkStatus === "linked";
   const hasUnfinished = (links ?? []).some(
     (link) => link.status === "pending" || link.status === "processing",
   );
   useEffect(() => {
-    if (!hasUnfinished) return;
+    if (!isLinked) return;
     let cancelled = false;
-    const timer = setInterval(() => {
-      void store
-        .listQueue()
-        .then((list) => {
-          if (cancelled) return;
-          setLinks(list);
-          onQueueChanged?.(list.length);
-        })
-        .catch(() => undefined);
-    }, 1000);
+    const syncOnce = async (): Promise<void> => {
+      try {
+        await browser.runtime?.sendMessage({ type: MSG_SYNC_NOW });
+      } catch {
+        /* background chưa sẵn sàng — lần sau thử lại */
+      }
+      if (cancelled) return;
+      const list = await store.listQueue().catch(() => null);
+      if (cancelled || !list) return;
+      setLinks(list);
+      onQueueChanged?.(list.length);
+    };
+    void syncOnce();
+    if (!hasUnfinished) {
+      return () => {
+        cancelled = true;
+      };
+    }
+    const timer = setInterval(() => void syncOnce(), 3000);
     return () => {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [hasUnfinished, store, onQueueChanged]);
+  }, [isLinked, hasUnfinished, store, onQueueChanged]);
 
   async function refreshQueue(): Promise<void> {
     try {
@@ -162,6 +187,7 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
   }
 
   function addPaste(): void {
+    if (linkStatus !== "linked") return; // chưa liên kết tài khoản web: không lưu (spec/62)
     const capture: CanonicalCapture | null = normalizeCaptureUrl(pasteUrl);
     if (!capture) {
       setPasteError(true);
@@ -188,10 +214,14 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
   function removeLink(link: PendingLink): void {
     const message =
       link.status === "succeeded"
-        ? "Xóa video này khỏi hàng đợi?"
+        ? "Xóa video này? Flashcard của video cũng bị xóa."
         : "Xóa video này khỏi hàng đợi?";
     if (!window.confirm(message)) return;
     void (async () => {
+      if (isLinked) {
+        const result = await deleteRemoteLink(link.id);
+        if (!result.ok) return; // lỗi mạng/phiên: giữ nguyên, người dùng thử lại sau
+      }
       await store.removeLink(link.id);
       await refreshQueue();
     })();
@@ -217,6 +247,47 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
             <p className="queue-subtitle" data-testid="queue-subtitle">
               {links.length} {SUBTITLE_SUFFIX_COPY}
             </p>
+          )}
+        </div>
+        {/* Trạng thái liên kết web (spec/17), gọn ở góc header như mobile. */}
+        <div className="queue-auth-row" data-testid="web-auth-row">
+          {authEmail && !authExpired ? (
+            <>
+              <span className="auth-email">{authEmail}</span>
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  void signOut().finally(() => {
+                    setAuthEmail(getAuthEmail());
+                    setAuthExpired(isAuthExpired());
+                    void refreshQueue();
+                  });
+                }}
+              >
+                Đăng xuất
+              </button>
+            </>
+          ) : (
+            <>
+              {authEmail && <span className="auth-email">Phiên liên kết đã hết hạn</span>}
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => {
+                  void browser.runtime
+                    .sendMessage({ type: MSG_LINK_WEB })
+                    .then(() => {
+                      setAuthEmail(getAuthEmail());
+                    })
+                    .catch(() => {
+                      /* mở tab fail — giữ nguyên trạng thái */
+                    });
+                }}
+              >
+                {authEmail ? "Liên kết lại" : "Liên kết BrainTot Web"}
+              </button>
+            </>
           )}
         </div>
       </header>
@@ -306,17 +377,17 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
                     <button
                       type="button"
                       className="action-button action-primary open-web-button"
-                      aria-label="Xem video"
-                      title="Mở video gốc"
+                      aria-label="Xem trên Web"
+                      title="Xem flashcard trên Web"
                       onClick={() =>
                         void browser.tabs.create({
-                          url: link.url,
+                          url: webFlashcardsUrl(engineVideoId(link)),
                           active: true,
                         })
                       }
                     >
                       <Play size={18} strokeWidth={2.4} fill="currentColor" aria-hidden="true" />
-                      Xem video
+                      Học ngay
                     </button>
                   </div>
                 )}
@@ -339,7 +410,8 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
             ))}
           </ol>
 
-          <footer className="queue-footer">
+          {linkStatus === "linked" ? (
+            <footer className="queue-footer">
               <form
                 className="queue-paste"
                 aria-label="Thêm link video vào hàng đợi"
@@ -374,6 +446,11 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
                 </p>
               )}
             </footer>
+          ) : linkStatus === "loading" ? null : (
+            <footer className="queue-footer">
+              <LinkGate expired={linkStatus === "expired"} compact />
+            </footer>
+          )}
         </>
       )}
     </>

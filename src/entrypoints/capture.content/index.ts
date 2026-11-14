@@ -9,6 +9,7 @@
 import { browser } from "wxt/browser";
 import { defineContentScript } from "wxt/utils/define-content-script";
 
+import { getLinkStatus, initBackendAuth, reloadAuth } from "../../lib/backend-auth";
 import { buildCapturePayload } from "../../lib/capture-payload";
 import type { CaptureSaveResponse } from "../../lib/messages";
 
@@ -22,6 +23,7 @@ const SOURCE = "content-button" as const;
 const TOAST_SAVED = "✓ Đã lưu link — mở BrainTot để xem hàng đợi";
 const TOAST_INVALID = "Link chưa đúng — chỉ nhận Reels, TikTok, YouTube Shorts";
 const TOAST_ERROR = "Có lỗi khi lưu — thử lại";
+const TOAST_LOGIN = "Hãy đăng nhập BrainTot để lưu video — đã mở trang liên kết";
 
 const HOST_STYLE = {
   position: "fixed",
@@ -35,6 +37,8 @@ const HOST_STYLE = {
 export default defineContentScript({
   matches: ["*://*.youtube.com/*", "*://*.tiktok.com/*", "*://*.facebook.com/*"],
   main(ctx) {
+    console.info("[BrainTot] content script ready (capture button)");
+
     const button: CaptureButton = createCaptureButton(() => void saveCurrentPage());
     const toast: CaptureToast = createCaptureToast();
 
@@ -81,6 +85,8 @@ export default defineContentScript({
      * thực sự đổi (poll 1s + mutation bắn dồn dập thì skip ngay).
      */
     function evaluate(): void {
+      // Nhãn nút theo trạng thái liên kết (tính từ phiên đã nạp, rẻ, kể cả khi token vừa hết hạn).
+      button.setLinkStatus(getLinkStatus());
       const href = location.href;
       const isShort = buildCapturePayload(href, SOURCE) !== null;
       if (href === lastHref && isShort === mounted) return;
@@ -113,6 +119,9 @@ export default defineContentScript({
           // cùng một trạng thái + toast, không phân biệt nội dung.
           button.setState("saved");
           toast.show(TOAST_SAVED);
+        } else if (response && !response.ok && response.reason === "not-linked") {
+          button.setState("idle");
+          toast.show(TOAST_LOGIN);
         } else if (response && !response.ok && response.reason === "invalid-url") {
           button.setState("idle");
           toast.show(TOAST_INVALID);
@@ -129,6 +138,18 @@ export default defineContentScript({
         saveInFlight = false;
       }
     }
+
+    // Nạp phiên đăng nhập và theo dõi thay đổi (liên kết/đăng xuất xảy ra ở context khác).
+    void initBackendAuth().then(evaluate).catch(() => {
+      /* noop: nút giữ nhãn mặc định */
+    });
+    const onStorageChanged = (changes: Record<string, unknown>, area: string): void => {
+      if (area !== "local" || !("braintot:auth-session" in changes)) return;
+      void reloadAuth().then(evaluate).catch(() => {
+        /* noop */
+      });
+    };
+    browser.storage.onChanged.addListener(onStorageChanged);
 
     // --- SPA watcher (3 cơ chế) -------------------------------------------
     // 1) YouTube bắn yt-navigate-finish sau mỗi điều hướng trong app.
@@ -157,6 +178,7 @@ export default defineContentScript({
     // Cleanup khi context invalidated (extension reload/update) — không leak.
     ctx.onInvalidated(() => {
       document.removeEventListener("yt-navigate-finish", evaluate);
+      browser.storage.onChanged.removeListener(onStorageChanged);
       titleObserver.disconnect();
       unmount();
       host?.remove();

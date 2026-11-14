@@ -15,6 +15,8 @@ import { browser } from "wxt/browser";
 import { QueueStore, type KV } from "../../lib/queue-store";
 
 import { HomeView } from "./HomeView";
+import { LinkGate } from "./LinkGate";
+import { useLinkStatus } from "./useLinkStatus";
 import { QueueView } from "./QueueView";
 import "./popup.css";
 
@@ -40,6 +42,7 @@ export type PopupView = "home" | "queue";
 export function App() {
   const [view, setView] = useState<PopupView>("home");
   const [queueCount, setQueueCount] = useState<number | null>(null);
+  const linkStatus = useLinkStatus();
 
   // Badge đếm link lần mở popup — view tự báo onQueueChanged khi đổi dữ liệu.
   useEffect(() => {
@@ -56,6 +59,16 @@ export function App() {
       cancelled = true;
     };
   }, []);
+
+  // Chưa đăng nhập (hoặc phiên hết hạn): chỉ hiện màn đăng nhập, không cho dùng app (spec/62).
+  if (linkStatus === "loading") return <main className="popup" aria-busy="true" />;
+  if (linkStatus !== "linked") {
+    return (
+      <main className="popup popup-gated">
+        <LinkGate expired={linkStatus === "expired"} />
+      </main>
+    );
+  }
 
   return (
     <main className="popup">

@@ -13,6 +13,8 @@ export type CaptureButtonState = "idle" | "saving" | "saved";
 const LABEL_IDLE = "Lưu vào BrainTot";
 const LABEL_SAVED = "✓ Đã lưu link";
 /** Chưa đăng nhập: nút đổi thành lời mời liên kết/đồng bộ với BrainTot Web (spec/62). */
+const LABEL_LINK = "Đồng bộ với BrainTot Web";
+const LABEL_RELINK = "Liên kết lại BrainTot Web";
 
 /** Icon mascot trong public/ — được copy sang extension ở E5 Step 0. */
 const MASCOT_ICON_PATH = "/mascot/logo-mark.png";
@@ -62,6 +64,8 @@ export interface CaptureButton {
   readonly element: HTMLButtonElement;
   getState(): CaptureButtonState;
   setState(state: CaptureButtonState): void;
+  /** Cập nhật nhãn theo trạng thái liên kết tài khoản web. */
+  setLinkStatus(status: "linked" | "expired" | "unlinked"): void;
 }
 
 export function createCaptureButton(onClick: () => void): CaptureButton {
@@ -84,12 +88,20 @@ export function createCaptureButton(onClick: () => void): CaptureButton {
   element.append(icon, label);
 
   let state: CaptureButtonState = "idle";
+  let linkStatus: "linked" | "expired" | "unlinked" = "linked";
   element.addEventListener("click", () => {
     if (state === "idle") onClick();
   });
 
   const render = () => {
-    label.textContent = state === "saved" ? LABEL_SAVED : LABEL_IDLE;
+    label.textContent =
+      state === "saved"
+        ? LABEL_SAVED
+        : linkStatus === "linked"
+          ? LABEL_IDLE
+          : linkStatus === "expired"
+            ? LABEL_RELINK
+            : LABEL_LINK;
     // saved: không cho click lại; saving: chặn double-click trong lúc chờ.
     element.disabled = state !== "idle";
   };
@@ -100,6 +112,11 @@ export function createCaptureButton(onClick: () => void): CaptureButton {
     getState: () => state,
     setState(next) {
       state = next;
+      render();
+    },
+    setLinkStatus(next) {
+      if (next === linkStatus) return;
+      linkStatus = next;
       render();
     },
   };

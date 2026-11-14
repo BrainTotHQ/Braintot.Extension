@@ -49,6 +49,27 @@ vi.mock("wxt/browser", () => ({
   },
 }));
 
+// fetchUserStats mock được (stats dashboard) — streakWeek giữ bản thật.
+const fetchUserStatsMock = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/user-stats", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, fetchUserStats: fetchUserStatsMock };
+});
+
+// Trạng thái liên kết (spec/62): mặc định đã liên kết để các test lưu link chạy; test gate tự đổi.
+const getLinkStatusMock = vi.hoisted(() => vi.fn(() => "linked" as "linked" | "expired" | "unlinked"));
+vi.mock("../../lib/backend-auth", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, getLinkStatus: getLinkStatusMock };
+});
+
+// Xoá trên server (spec/61): module backend-auth giữ state giữa các test nên một số test chạy
+// ở chế độ đã liên kết; mock để test xoá không gọi mạng thật.
+const deleteRemoteLinkMock = vi.hoisted(() => vi.fn());
+vi.mock("../../lib/queue-api", async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>;
+  return { ...actual, deleteRemoteLink: deleteRemoteLinkMock };
+});
 
 // Tên video qua oEmbed: không gọi mạng thật trong test.
 vi.mock("../../lib/video-title", async (importOriginal) => {
@@ -67,6 +88,10 @@ beforeEach(() => {
   tabsQuery.mockReset();
   // Tab mặc định: trang thường (không phải video) — các test lưu bằng paste.
   tabsQuery.mockResolvedValue([{ url: "https://example.com/tin-tuc" }]);
+  // Mặc định không có stats (popup hiển thị "—"); test stats tự ghi đè.
+  fetchUserStatsMock.mockReset().mockResolvedValue(null);
+  deleteRemoteLinkMock.mockReset().mockResolvedValue({ ok: true, value: null });
+  getLinkStatusMock.mockReset().mockReturnValue("linked");
 });
 
 describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
@@ -128,7 +153,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     const steps = screen.getByTestId("queue-empty-steps");
     expect(steps.textContent).toContain("Mở video YouTube, TikTok hoặc Reels");
     expect(steps.textContent).toContain("Bấm extension BrainTot: dán link hoặc Lưu trang này");
-    expect(steps.textContent).toContain("Chờ xử lý — trạng thái đổi ngay trong hàng đợi");
+    expect(steps.textContent).toContain("Chờ tách câu — bài học xuất hiện trên Web");
 
     fireEvent.click(await screen.findByTestId("tab-home"));
     expect(await screen.findByLabelText("Dán link video vừa xem")).toBeTruthy();
@@ -171,6 +196,156 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect((cta as HTMLButtonElement).disabled).toBe(false);
 
     // Chờ promise tabs.query (useEffect) kết thúc trong act — output pristine.
+    await act(async () => {});
+  });
+
+  it("(g) view home hiện header greeting + promo với copy verbatim", async () => {
+    render(<App />);
+    expect(await screen.findByAltText("BrainTot")).toBeTruthy();
+    expect(screen.getByText("Học từ chính video bạn xem hôm nay")).toBeTruthy();
+    expect(await screen.findByAltText("Linh vật BrainTot chia sẻ video")).toBeTruthy();
+    expect(screen.getByText("Gặp video hay? Lưu 1 chạm về BrainTot!")).toBeTruthy();
+
+    // Chờ promise tabs.query (useEffect) kết thúc trong act — output pristine.
+    await act(async () => {});
+  });
+
+  it("(h) YouTube + TikTok/Reels succeeded → nút Xem trên Web đúng deep-link theo nền tảng; pending không có nút", async () => {
+    storageData.set("braintot:pending-links", {
+      done: {
+        id: "a".repeat(64),
+        url: "https://www.youtube.com/watch?v=uSjtxnvCacA",
+        platform: "youtube",
+        videoId: "uSjtxnvCacA",
+        status: "succeeded",
+        savedAt: "2026-11-07T04:45:30.842Z",
+        processedAt: "2026-11-07T04:46:10.000Z",
+      },
+      doneTikTok: {
+        id: "d".repeat(64),
+        url: "https://www.tiktok.com/@anhmithoctienganh/video/7628629210445204756",
+        platform: "tiktok",
+        videoId: "7628629210445204756",
+        status: "succeeded",
+        savedAt: "2026-11-07T04:45:50.842Z",
+        processedAt: "2026-11-07T04:46:20.000Z",
+      },
+      waiting: {
+        id: "b".repeat(64),
+        url: "https://www.tiktok.com/@creator/video/1234567890123456789",
+        platform: "tiktok",
+        videoId: "1234567890123456789",
+        status: "pending",
+        savedAt: "2026-11-07T04:45:40.842Z",
+      },
+      doneReel: {
+        id: "c".repeat(64),
+        url: "https://www.facebook.com/reel/2431405740998979",
+        platform: "facebook_reel",
+        videoId: "2431405740998979",
+        status: "succeeded",
+        savedAt: "2026-11-07T04:46:00.842Z",
+        processedAt: "2026-11-07T04:46:30.000Z",
+      },
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    const openButtons = await screen.findAllByRole("button", { name: "Xem trên Web" });
+    expect(openButtons).toHaveLength(3); // YouTube + TikTok + Reels succeeded
+
+    const openedUrls: string[] = [];
+    for (const button of openButtons) {
+      fireEvent.click(button);
+      await waitFor(() => {
+        expect(tabsCreate).toHaveBeenCalledTimes(openedUrls.length + 1);
+      });
+      openedUrls.push(tabsCreate.mock.calls[openedUrls.length]?.[0]?.url ?? "");
+    }
+
+    // Mọi nền tảng mở /flashcards?video=<videoId theo engine> (spec/57)
+    expect(openedUrls).toContain("https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=uSjtxnvCacA");
+    expect(openedUrls).toContain(
+      "https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=tt_7628629210445204756",
+    );
+    expect(openedUrls).toContain(
+      "https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=fb_2431405740998979",
+    );
+
+    // Link pending: chỉ chip chờ, không có nút web cho link chưa xử lý.
+    expect(screen.getByText("Đang chờ")).toBeTruthy();
+
+    await act(async () => {});
+  });
+
+  it("(i) đã liên kết Google → chip email + Đăng xuất trong hàng đợi", async () => {
+    const { saveAuthSession } = await import("../../lib/backend-auth");
+    await saveAuthSession({
+      accessToken: "g",
+      email: "user@gmail.com",
+      expiresAt: Date.now() + 3_600_000,
+      uid: "u1",
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    expect(await screen.findByText(/user@gmail.com/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Đăng xuất" })).toBeTruthy();
+    // Chưa liên kết thì có nút liên kết — đã liên kết thì không còn.
+    expect(screen.queryByRole("button", { name: "Liên kết BrainTot Web" })).toBeNull();
+
+    await act(async () => {});
+  });
+
+  it("(j) queue với card → KHÔNG còn ký tự emoji/AI-slop nào trong copy", async () => {
+    storageData.set("braintot:pending-links", {
+      done: {
+        id: "a".repeat(64),
+        url: "https://www.youtube.com/watch?v=uSjtxnvCacA",
+        platform: "youtube",
+        videoId: "uSjtxnvCacA",
+        status: "succeeded",
+        savedAt: "2026-11-08T04:45:30.842Z",
+        processedAt: "2026-11-08T04:46:10.000Z",
+      },
+      waiting: {
+        id: "b".repeat(64),
+        url: "https://www.tiktok.com/@creator/video/1234567890123456789",
+        platform: "tiktok",
+        videoId: "1234567890123456789",
+        status: "pending",
+        savedAt: "2026-11-08T04:45:40.842Z",
+      },
+    });
+    const { container } = render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+    await screen.findByRole("heading", { level: 2, name: "Hàng đợi" });
+
+    // Emoji + arrow + symbol blocks (2190-2BFF, 1F000-1FAFF) — copy sạch.
+    expect(container.textContent).not.toMatch(/[\u2190-\u2BFF]|[\u{1F000}-\u{1FAFF}]/u);
+
+    await act(async () => {});
+  });
+
+  it("(k) không còn nút/kết quả 'Đồng bộ' nào trong hàng đợi (sync nền spec/24)", async () => {
+    storageData.set("braintot:pending-links", {
+      done: {
+        id: "a".repeat(64),
+        url: "https://www.youtube.com/watch?v=uSjtxnvCacA",
+        platform: "youtube",
+        videoId: "uSjtxnvCacA",
+        status: "succeeded",
+        savedAt: "2026-11-08T04:45:30.842Z",
+        processedAt: "2026-11-08T04:46:10.000Z",
+      },
+    });
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    expect(await screen.findByText("Sẵn sàng")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Đồng bộ/ })).toBeNull();
+    expect(screen.queryByText(/Đang đồng bộ/)).toBeNull();
+
     await act(async () => {});
   });
 
@@ -220,6 +395,118 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect(screen.queryByTestId("queue-badge")).toBeNull();
   });
 
+  // --- spec/31 T4: dashboard trang chủ (chỉ dữ liệu thật) ---
+
+  it("(n) greeting từ email Google + nút Truy cập đến Web mở web root", async () => {
+    const { saveAuthSession } = await import("../../lib/backend-auth");
+    await saveAuthSession({
+      accessToken: "g",
+      email: "minh.nguyen@gmail.com",
+      expiresAt: Date.now() + 3_600_000,
+      uid: "u1",
+    });
+    render(<App />);
+
+    // Tên = segment đầu của local-part, viết hoa chữ cái đầu.
+    expect(await screen.findByText("Chào Minh")).toBeTruthy();
+
+    fireEvent.click(screen.getByTestId("open-web"));
+    expect(tabsCreate).toHaveBeenCalledTimes(1);
+    expect(tabsCreate.mock.calls[0]?.[0]).toEqual({
+      url: "https://braintot-web-jsgeeh2ixa-de.a.run.app",
+      active: true,
+    });
+    await act(async () => {});
+  });
+
+  it("(n2) chưa liên kết → greeting 'Chào bạn'", async () => {
+    render(<App />);
+    expect(await screen.findByText("Chào bạn")).toBeTruthy();
+    await act(async () => {});
+  });
+
+  it("(o) stats thật → chip streak, goal X/Y, strip tuần, grid số liệu + video đã lưu", async () => {
+    storageData.set("braintot:pending-links", {
+      one: {
+        id: "a".repeat(64),
+        url: "https://www.tiktok.com/@creator/video/1234567890123456789",
+        platform: "tiktok",
+        videoId: "1234567890123456789",
+        status: "pending",
+        savedAt: "2026-11-08T04:45:30.842Z",
+      },
+      two: {
+        id: "b".repeat(64),
+        url: "https://www.youtube.com/watch?v=uSjtxnvCacA",
+        platform: "youtube",
+        videoId: "uSjtxnvCacA",
+        status: "succeeded",
+        savedAt: "2026-11-08T04:45:40.842Z",
+      },
+    });
+    fetchUserStatsMock.mockResolvedValue({
+      streakDays: 13,
+      lastActiveDate: "2026-11-05",
+      todayReviewedCount: 5,
+      totalPracticedCount: 128,
+      dailyGoal: 20,
+      customChunksCount: 34,
+      totalChunksCount: 40,
+    });
+    render(<App />);
+
+    expect(await screen.findByTestId("streak-chip")).toBeTruthy();
+    expect(screen.getByTestId("streak-chip").textContent).toContain("13");
+
+    // Card mục tiêu: 5/20 câu luyện.
+    expect(screen.getByTestId("goal-progress").textContent).toContain("5");
+    expect(screen.getByTestId("goal-progress").textContent).toContain("20");
+
+    // Grid "Số liệu của bạn": 128 luyện / 34 cụm từ / 2 video đã lưu / 5 hôm nay.
+    const grid = screen.getByTestId("stats-grid");
+    expect(grid.textContent).toContain("Từ vựng đã luyện");
+    expect(grid.textContent).toContain("Cụm từ đã lưu");
+    expect(grid.textContent).toContain("Video đã lưu");
+    expect(grid.textContent).toContain("128");
+    expect(grid.textContent).toContain("34");
+    expect(grid.textContent).toContain("5");
+
+    // Dải tuần 7 ô ngày T2→CN.
+    const week = screen.getByTestId("streak-week");
+    expect(week.textContent).toContain("T2");
+    expect(week.textContent).toContain("CN");
+    expect(week.querySelectorAll(".week-day").length).toBe(7);
+    await act(async () => {});
+  });
+
+  it("(p) không có stats → ẩn cả dashboard (không có ô '—'), chip streak ẩn, vẫn có ô dán link và số video đã lưu", async () => {
+    storageData.set("braintot:pending-links", {
+      one: {
+        id: "a".repeat(64),
+        url: "https://www.tiktok.com/@creator/video/1234567890123456789",
+        platform: "tiktok",
+        videoId: "1234567890123456789",
+        status: "pending",
+        savedAt: "2026-11-08T04:45:30.842Z",
+      },
+    });
+    render(<App />);
+
+    expect(await screen.findByLabelText("Lưu bằng đường dẫn video")).toBeTruthy();
+    expect(screen.queryByTestId("stats-grid")).toBeNull();
+    expect(screen.queryByTestId("goal-card")).toBeNull();
+    expect(screen.queryByTestId("streak-week")).toBeNull();
+    expect(screen.queryByTestId("streak-chip")).toBeNull();
+    // Video đã lưu vẫn hiện số thật từ hàng đợi (đếm async sau render đầu).
+    await waitFor(() => {
+      expect(document.querySelector(".saved-chip")?.textContent).toContain("1");
+    });
+    await act(async () => {});
+  });
+
+  // --- spec/31 T5: hàng đợi restyle (chip lọc + retry + paste bar) ---
+
+  /** Seed 4 link đủ 4 trạng thái (spec/31 T5) — record key = link.id như production. */
   function seedFourLinks(): void {
     storageData.set("braintot:pending-links", {
       ["a".repeat(64)]: {
@@ -264,7 +551,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     render(<App />);
     fireEvent.click(await screen.findByTestId("tab-queue"));
 
-    expect(await screen.findByText("4 video · demo xử lý giả lập")).toBeTruthy();
+    expect(await screen.findByText("4 video · chưa bật nhắc ôn")).toBeTruthy();
     expect(screen.getByTestId("filter-all").textContent).toContain("4");
     expect(screen.getByTestId("filter-waiting").textContent).toContain("2");
     expect(screen.getByTestId("filter-succeeded").textContent).toContain("1");
@@ -273,6 +560,117 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     fireEvent.click(screen.getByTestId("filter-failed"));
     expect(screen.getByText("@other")).toBeTruthy();
     expect(screen.queryByText("@creator")).toBeNull();
+    await act(async () => {});
+  });
+
+  it("(r2) nút xoá: xác nhận rồi xoá link khỏi hàng đợi (chưa liên kết → chỉ xoá local)", async () => {
+    seedFourLinks();
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    const buttons = await screen.findAllByTestId("delete-link");
+    expect(buttons).toHaveLength(4);
+    fireEvent.click(buttons[0]!);
+
+    await waitFor(() => {
+      expect(storedLinks()).toHaveLength(3);
+    });
+    vi.restoreAllMocks();
+    await act(async () => {});
+  });
+
+  it("(r3) huỷ xác nhận → không xoá gì", async () => {
+    seedFourLinks();
+    vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    fireEvent.click((await screen.findAllByTestId("delete-link"))[0]!);
+
+    expect(storedLinks()).toHaveLength(4);
+    vi.restoreAllMocks();
+    await act(async () => {});
+  });
+
+  it("(gate-1) chưa liên kết → Trang chủ không có ô dán link hay nút lưu, chỉ có nút đăng nhập", async () => {
+    getLinkStatusMock.mockReturnValue("unlinked");
+    render(<App />);
+
+    expect(await screen.findByTestId("link-gate")).toBeTruthy();
+    expect(screen.getByText("Đăng nhập để lưu video")).toBeTruthy();
+    expect(screen.queryByLabelText("Lưu bằng đường dẫn video")).toBeNull();
+    expect(screen.queryByText("Lưu vào BrainTot")).toBeNull();
+    expect(screen.queryByText("Lưu trang này")).toBeNull();
+    // Cả dashboard và tab bar đều ẩn: chưa đăng nhập thì không dùng được app.
+    expect(screen.queryByTestId("tab-queue")).toBeNull();
+    expect(screen.queryByText("Số liệu của bạn")).toBeNull();
+    await act(async () => {});
+  });
+
+  it("(gate-2) phiên hết hạn → chỉ còn màn liên kết lại, không có tab bar, hàng đợi hay ô dán", async () => {
+    getLinkStatusMock.mockReturnValue("expired");
+    seedFourLinks();
+    render(<App />);
+    expect(await screen.findByText("Phiên liên kết đã hết hạn")).toBeTruthy();
+    expect(screen.getByText("Liên kết lại")).toBeTruthy();
+    expect(screen.queryByTestId("tab-queue")).toBeNull();
+    expect(screen.queryByTestId("tab-home")).toBeNull();
+    expect(screen.queryByTestId("delete-link")).toBeNull();
+    expect(screen.queryByTestId("queue-paste-input")).toBeNull();
+    await act(async () => {});
+  });
+
+  it("(gate-3) đã liên kết → có ô dán link và không có gate", async () => {
+    render(<App />);
+    expect(await screen.findByLabelText("Lưu bằng đường dẫn video")).toBeTruthy();
+    expect(screen.queryByTestId("link-gate")).toBeNull();
+    await act(async () => {});
+  });
+
+  it("(r) card failed có nút Thử lại → updateLink về pending + chip cập nhật", async () => {
+    seedFourLinks();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+
+    fireEvent.click(await screen.findByTestId("retry-link"));
+    await waitFor(() => {
+      const failed = storedLinks().find((link) => link.status === "failed");
+      expect(failed).toBeUndefined();
+    });
+    // Chip lọc cập nhật: Chờ (3), Lỗi (0).
+    expect(screen.getByTestId("filter-waiting").textContent).toContain("3");
+    expect(screen.getByTestId("filter-failed").textContent).toContain("0");
+    await act(async () => {});
+  });
+
+  it("(s) paste bar trong hàng đợi: link hợp lệ và link rút gọn đều lưu ngay (spec 33)", async () => {
+    seedFourLinks();
+    render(<App />);
+    fireEvent.click(await screen.findByTestId("tab-queue"));
+    await screen.findByText("4 video · chưa bật nhắc ôn");
+
+    const before = storedLinks().length;
+    fireEvent.change(screen.getByTestId("queue-paste-input"), {
+      target: { value: "https://www.tiktok.com/@new/video/8888888888888888888" },
+    });
+    fireEvent.click(screen.getByTestId("queue-paste-add"));
+    await waitFor(() => {
+      expect(storedLinks().length).toBe(before + 1);
+    });
+    // Chip Tất cả cập nhật ngay (5), input đã xoá.
+    expect(screen.getByTestId("filter-all").textContent).toContain("5");
+    expect((screen.getByTestId("queue-paste-input") as HTMLInputElement).value).toBe("");
+
+    fireEvent.change(screen.getByTestId("queue-paste-input"), {
+      target: { value: "https://vm.tiktok.com/abc" },
+    });
+    fireEvent.click(screen.getByTestId("queue-paste-add"));
+    // spec 33: short-link cũng được lưu với URL gốc (engine tự resolve redirect)
+    await waitFor(() => {
+      expect(storedLinks().length).toBe(before + 2);
+    });
+    expect((screen.getByTestId("queue-paste-input") as HTMLInputElement).value).toBe("");
     await act(async () => {});
   });
 });
