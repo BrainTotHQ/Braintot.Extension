@@ -20,4 +20,21 @@ export type CaptureSaveRequest = {
 
 export type CaptureSaveResponse =
   | { ok: true; saved: boolean; link: PendingLink }
-  | { ok: false; reason: "invalid-url" | "storage-error" };
+  | { ok: false; reason: "invalid-url" | "storage-error" | "not-linked" };
+
+/** Tên message yêu cầu background chạy sync hàng đợi lên backend ngay. */
+export const MSG_SYNC_NOW = "braintot/sync-now";
+
+/** Response của MSG_SYNC_NOW — shape trùng SyncStatusResponse của sync-engine. */
+export type SyncNowResponse =
+  | { ok: true; pushed: number; processed: number; failed: number }
+  | { ok: false; reason: "sync-unavailable" | "unreachable" | "auth-error" };
+
+/** Tên message yêu cầu background mở trang liên kết web (spec/17). */
+export const MSG_LINK_WEB = "braintot/link-web";
+
+/** Response của MSG_LINK_WEB. */
+export type LinkWebResponse = { ok: true } | { ok: false; reason: "unreachable" };
+
+/** Content script `web-session` báo session mới nhất trên web về background (spec/62). */
+export const MSG_WEB_SESSION = "braintot/web-session";

@@ -21,6 +21,8 @@ export default defineConfig({
       },
     },
     permissions: ["activeTab", "storage"],
+    // Trang bắt tay đăng nhập: chỉ web origin được gửi message về extension.
+    externally_connectable: { matches: ["https://braintot-web-jsgeeh2ixa-de.a.run.app/*"] },
     host_permissions: ["*://*.youtube.com/*", "*://*.tiktok.com/*", "*://*.facebook.com/*"],
     web_accessible_resources: [
       {
