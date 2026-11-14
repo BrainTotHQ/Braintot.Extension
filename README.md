@@ -71,4 +71,4 @@ src/
     popup/               Trang chủ + Hàng đợi + LinkGate
 ```
 
-Thuật ngữ miền: *pending link* là một link video đã lưu và chờ biến thành bài học.
+Thuật ngữ miền: *pending link* là một link video đã lưu và chờ biến thành bài học. Danh sách đầy đủ xem ở [GLOSSARY.md](GLOSSARY.md).
