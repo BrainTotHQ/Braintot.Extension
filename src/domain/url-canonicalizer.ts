@@ -61,7 +61,18 @@ function canonicalizeTikTok(url: URL): CanonicalCapture | null {
     };
   }
 
-  const fromPath = /^\/@[^/]+\/video\/(\d{10,})(?:[/?#]|$)/.exec(url.pathname)?.[1];
+  // Link share dạng tiktok.com/t/<code>: giữ URL sạch, engine tự resolve.
+  const shortCode = /^\/t\/([A-Za-z0-9_-]+)(?:[/?#]|$)/.exec(url.pathname)?.[1];
+  if (shortCode) {
+    return {
+      platform: "tiktok",
+      videoId: shortCode,
+      canonicalUrl: `https://www.tiktok.com/t/${shortCode}`,
+    };
+  }
+
+  // Hỗ trợ cả video lẫn photo slideshow (khớp backend pending-link-url.ts + ai-engine).
+  const fromPath = /^\/@[^/]+\/(?:video|photo)\/(\d{10,})(?:[/?#]|$)/.exec(url.pathname)?.[1];
   if (!fromPath) return null;
 
   const clean = new URL(`https://www.tiktok.com${url.pathname.replace(/\/$/, "")}`);
@@ -80,8 +91,32 @@ function canonicalizeFacebookReel(url: URL): CanonicalCapture | null {
   }
 
   const fromPath = /^\/(?:reel|reels\/videos)\/(\d+)(?:[/?#]|$)/.exec(url.pathname)?.[1];
-  return fromPath
-    ? { platform: "facebook_reel", videoId: fromPath, canonicalUrl: `https://www.facebook.com/reel/${fromPath}` }
+  if (fromPath) {
+    return {
+      platform: "facebook_reel",
+      videoId: fromPath,
+      canonicalUrl: `https://www.facebook.com/reel/${fromPath}`,
+    };
+  }
+
+  const shareCode = /^\/share\/(?:r|v|reel)\/([A-Za-z0-9_-]+)(?:[/?#]|$)/.exec(url.pathname)?.[1];
+  if (shareCode) {
+    return {
+      platform: "facebook_reel",
+      videoId: `fbw_${shareCode}`,
+      canonicalUrl: `https://www.facebook.com${url.pathname.replace(/\/$/, "")}`,
+    };
+  }
+
+  const watchId =
+    /^\/watch\/(\d+)(?:[/?#]|$)/.exec(url.pathname)?.[1] ??
+    (url.pathname.replace(/\/$/, "") === "/watch" ? url.searchParams.get("v") : null);
+  return watchId && /^\d+$/.test(watchId)
+    ? {
+        platform: "facebook_reel",
+        videoId: watchId,
+        canonicalUrl: `https://www.facebook.com/reel/${watchId}`,
+      }
     : null;
 }
 

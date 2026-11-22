@@ -41,6 +41,26 @@ describe("normalizeCaptureUrl", () => {
     });
   });
 
+  it("chuẩn hóa TikTok photo slideshow (khớp mobile + AI engine)", () => {
+    const result = normalizeCaptureUrl(
+      "https://www.tiktok.com/@minhtrn7495/photo/7707470481502342408?is_from_webapp=1"
+    );
+    expect(result).toEqual({
+      platform: "tiktok",
+      videoId: "7707470481502342408",
+      canonicalUrl: "https://www.tiktok.com/@minhtrn7495/photo/7707470481502342408",
+    });
+  });
+
+  it("nhận link share tiktok.com/t/<code>", () => {
+    const result = normalizeCaptureUrl("https://www.tiktok.com/t/ZTabc123/");
+    expect(result).toEqual({
+      platform: "tiktok",
+      videoId: "ZTabc123",
+      canonicalUrl: "https://www.tiktok.com/t/ZTabc123",
+    });
+  });
+
   it("nhận link rút gọn vm.tiktok.com — giữ URL gốc, engine tự resolve redirect (spec 33)", () => {
     const result = normalizeCaptureUrl("https://vm.tiktok.com/ZMabcdef/?tt_from=share");
     expect(result).toEqual({
@@ -91,6 +111,19 @@ describe("normalizeCaptureUrl", () => {
       platform: "facebook_reel",
       videoId: "fbw_XYZ789",
       canonicalUrl: "https://fb.watch/XYZ789?utm_source=share",
+    });
+  });
+
+  it("nhận link share facebook.com/share/r/... và facebook.com/watch?v=...", () => {
+    expect(normalizeCaptureUrl("https://www.facebook.com/share/r/AbC123/?utm_source=x")).toEqual({
+      platform: "facebook_reel",
+      videoId: "fbw_AbC123",
+      canonicalUrl: "https://www.facebook.com/share/r/AbC123",
+    });
+    expect(normalizeCaptureUrl("https://www.facebook.com/watch/?v=9876543210")).toEqual({
+      platform: "facebook_reel",
+      videoId: "9876543210",
+      canonicalUrl: "https://www.facebook.com/reel/9876543210",
     });
   });
 

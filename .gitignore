@@ -7,3 +7,4 @@ node_modules/
 !.env.example
 test-results/
 .superpowers/
+.DS_Store

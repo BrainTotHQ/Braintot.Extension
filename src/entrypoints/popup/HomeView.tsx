@@ -8,7 +8,18 @@
  * App; URL validate bằng normalizeCaptureUrl.
  */
 
-import { BookOpen, Flame, Globe, SquarePlay, Target, Timer, Video } from "lucide-react";
+import {
+  BookmarkPlus,
+  BookOpen,
+  CheckCircle2,
+  Flame,
+  Globe,
+  Sparkles,
+  SquarePlay,
+  Target,
+  Timer,
+  Video,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import { browser } from "wxt/browser";
 
@@ -20,6 +31,7 @@ import { getAuthEmail, initBackendAuth } from "../../lib/backend-auth";
 import { LinkGate } from "./LinkGate";
 import { useLinkStatus } from "./useLinkStatus";
 import { getWebBaseUrl } from "../../lib/backend-config";
+import { MSG_GET_ACTIVE_URL, type ActiveUrlResponse } from "../../lib/messages";
 import type { QueueStore } from "../../lib/queue-store";
 import {
   fetchUserStats,
@@ -28,12 +40,11 @@ import {
 } from "../../lib/user-stats";
 
 // Copy verbatim từ plan — không đổi từng ký tự.
-const PROMO_COPY = "Gặp video hay? Lưu 1 chạm về BrainTot!";
-const LABEL_COPY = "Dán link video vừa xem";
-const CTA_COPY = "Lưu vào BrainTot";
+const PROMO_COPY = "Gặp video hay? Lưu 1 chạm về QuizKard!";
 const SAVE_PAGE_COPY = "Lưu trang này";
-const ERROR_COPY = "Link chưa đúng — chỉ nhận Reels, TikTok, YouTube Shorts";
-const SUCCESS_COPY = "✓ Đã lưu link";
+const SAVE_PAGE_HINT_IDLE = "Mở YouTube Shorts, TikTok hoặc Facebook Reels để lưu nhanh.";
+const SAVE_PAGE_HINT_READY = "Đã nhận diện video ngắn trên tab hiện tại.";
+const SUCCESS_COPY = "Đã lưu link";
 const OPEN_QUEUE_COPY = "Xem hàng đợi";
 
 // Copy dashboard (spec/31) — không emoji, icon là SVG inline.
@@ -50,7 +61,7 @@ const WEEKDAY_LABELS = ["T2", "T3", "T4", "T5", "T6", "T7", "CN"];
 
 /** Tooltip khi tab hiện tại không phải video ngắn hỗ trợ (nút vẫn hiện, disabled). */
 const PAGE_DISABLED_TITLE = "Tab hiện tại không phải video Reels, TikTok hoặc YouTube Shorts";
-const PAGE_ENABLED_TITLE = "Lưu tab đang mở vào BrainTot";
+const PAGE_ENABLED_TITLE = "Lưu tab đang mở vào QuizKard";
 
 /** Tên chào: segment đầu của local-part email, viết hoa chữ cái đầu. */
 export function displayNameFromEmail(email: string | null): string {
@@ -75,8 +86,6 @@ export function HomeView({
   queueCount,
   onQueueChanged,
 }: HomeViewProps) {
-  const [url, setUrl] = useState("");
-  const [error, setError] = useState(false);
   const [saved, setSaved] = useState(false);
   const [pageCapture, setPageCapture] = useState<CanonicalCapture | null>(null);
   const [authEmail, setAuthEmail] = useState<string | null>(null);
@@ -84,13 +93,33 @@ export function HomeView({
   const linkStatus = useLinkStatus();
 
   // Đọc tab hiện tại 1 lần (hợp lệ nhờ activeTab): URL chuẩn hóa được → enabled.
+  // Nếu URL là TikTok feed (chưa có /video/ trên thanh địa chỉ), hỏi content script URL bài đang phát.
   useEffect(() => {
     let cancelled = false;
     browser.tabs
       .query({ active: true, currentWindow: true })
-      .then((tabs) => {
+      .then(async (tabs) => {
         if (cancelled) return;
-        setPageCapture(normalizeCaptureUrl(tabs[0]?.url ?? ""));
+        const tab = tabs[0];
+        const direct = normalizeCaptureUrl(tab?.url ?? "");
+        if (direct) {
+          setPageCapture(direct);
+          return;
+        }
+        if (tab?.id !== undefined && typeof browser.tabs.sendMessage === "function") {
+          try {
+            const response = (await browser.tabs.sendMessage(tab.id, {
+              type: MSG_GET_ACTIVE_URL,
+            })) as ActiveUrlResponse | undefined;
+            if (!cancelled) {
+              setPageCapture(normalizeCaptureUrl(response?.url ?? ""));
+            }
+            return;
+          } catch {
+            /* tab không có content script — bỏ qua */
+          }
+        }
+        if (!cancelled) setPageCapture(null);
       })
       .catch(() => {
         if (cancelled) return;
@@ -148,8 +177,8 @@ export function HomeView({
       <header className="popup-header home-header">
         <img
           className="popup-logo"
-          src="/mascot/mascot-book.png"
-          alt="BrainTot"
+          src="/icons/icon-128.png"
+          alt="QuizKard"
           width={40}
           height={40}
         />
@@ -278,25 +307,17 @@ export function HomeView({
         {linkStatus === "linked" ? (
           <>
             <section className="promo">
-              <img
-                className="promo-mascot"
-                src="/mascot/mascot-share.png"
-                alt="Linh vật BrainTot chia sẻ video"
-                width={78}
-                height={72}
-              />
+              <span className="promo-icon" aria-hidden="true">
+                <Sparkles size={22} strokeWidth={2.4} />
+              </span>
               <p className="promo-text">{PROMO_COPY}</p>
             </section>
 
             {saved && (
               <section className="save-banner" role="status">
-                <img
-                  className="save-banner-mascot"
-                  src="/mascot/mascot-cheer-up.png"
-                  alt="Linh vật BrainTot ăn mừng"
-                  width={56}
-                  height={52}
-                />
+                <span className="save-banner-icon" aria-hidden="true">
+                  <CheckCircle2 size={22} strokeWidth={2.4} />
+                </span>
                 <div className="save-banner-text">
                   <p>{SUCCESS_COPY}</p>
                   <button type="button" className="link-button" onClick={onOpenQueue}>
@@ -306,69 +327,27 @@ export function HomeView({
               </section>
             )}
 
-            <form
-              className="paste-form"
-              aria-label="Lưu bằng đường dẫn video"
-              onSubmit={(event) => event.preventDefault()}
-            >
-              <label className="paste-label" htmlFor="video-link">
-                {LABEL_COPY}
-              </label>
-              <input
-                id="video-link"
-                className="paste-input"
-                type="url"
-                placeholder="https://www.tiktok.com/@user/video/..."
-                value={url}
-                onChange={(event) => {
-                  setUrl(event.target.value);
-                  setError(false);
-                  setSaved(false);
-                }}
-              />
-              {error && (
-                <p className="paste-error" role="alert">
-                  {ERROR_COPY}
-                </p>
-              )}
+            <section className="save-page-card">
+              <p className={`save-page-hint${pageCapture ? " is-ready" : ""}`}>
+                {pageCapture ? SAVE_PAGE_HINT_READY : SAVE_PAGE_HINT_IDLE}
+              </p>
               <button
                 type="button"
-                className="popup-button save-link"
-                disabled={url.trim() === ""}
+                className="popup-button save-link save-page"
+                disabled={!pageCapture}
+                title={pageCapture ? PAGE_ENABLED_TITLE : PAGE_DISABLED_TITLE}
                 onClick={() => {
-                  const capture = normalizeCaptureUrl(url);
-                  if (!capture) {
-                    setError(true);
-                    return;
-                  }
-                  void save(capture);
+                  if (pageCapture) void save(pageCapture);
                 }}
               >
-                {CTA_COPY}
+                <BookmarkPlus size={16} strokeWidth={2.2} aria-hidden="true" />
+                {SAVE_PAGE_COPY}
               </button>
-            </form>
-
-            <button
-              type="button"
-              className="popup-button save-page"
-              disabled={!pageCapture}
-              title={pageCapture ? PAGE_ENABLED_TITLE : PAGE_DISABLED_TITLE}
-              onClick={() => {
-                if (pageCapture) void save(pageCapture);
-              }}
-            >
-              {SAVE_PAGE_COPY}
-            </button>
+            </section>
           </>
         ) : linkStatus === "loading" ? null : (
           <LinkGate expired={linkStatus === "expired"} />
         )}
-
-        <footer className="paste-footer">
-          <button type="button" className="link-button" onClick={onOpenQueue}>
-            {OPEN_QUEUE_COPY}
-          </button>
-        </footer>
       </div>
     </>
   );

@@ -1,7 +1,6 @@
 /**
- * Toast thông báo trong shadow root: hiện phía trên nút Lưu, tự ẩn sau 3s,
+ * Toast thông báo trong shadow root: hiện phía dưới nút Lưu, tự ẩn sau 3s,
  * `pointer-events: none` nên không bao giờ chặn click của host page.
- * v1 chỉ text (kèm ✓ trong copy), không dùng mascot.
  */
 
 const TOAST_VISIBLE_CLASS = "braintot-toast--visible";
@@ -11,14 +10,14 @@ export const TOAST_STYLE = `
   .braintot-toast {
     pointer-events: none;
     display: none;
-    margin: 0 0 8px auto;
-    max-width: 280px;
-    padding: 8px 14px;
-    border-radius: 12px;
-    background: #12264F;
+    margin: 0 12px 0 0;
+    max-width: 260px;
+    padding: 8px 13px;
+    border-radius: 10px;
+    background: #0F1F42;
     color: #ffffff;
-    font: 500 13px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
-    box-shadow: 0 4px 14px rgba(18, 38, 79, 0.28);
+    font: 500 12.5px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    box-shadow: 0 6px 18px rgba(15, 31, 66, 0.24);
     text-align: left;
   }
   .braintot-toast--visible {
