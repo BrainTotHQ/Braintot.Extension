@@ -36,7 +36,7 @@ const pickAny = (suffix: string): string =>
 
 /** Base URL web app — nút "Xem trên Web" mở bài học tại đây. */
 export const getWebBaseUrl = (): string =>
-  pickAny("WEB_URL").replace(/\/+$/, "") || "https://braintot-web-jsgeeh2ixa-de.a.run.app";
+  pickAny("WEB_URL").replace(/\/+$/, "") || "https://braintot.tonythaniel.com";
 
 /**
  * VideoId theo keyspace engine/web (platforms.py, web `resolveVideoIdentity`): YouTube raw 11 ký tự,

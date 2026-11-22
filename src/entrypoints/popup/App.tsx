@@ -95,7 +95,7 @@ export function App() {
           aria-current={view === "home" ? "page" : undefined}
           onClick={() => setView("home")}
         >
-          <House size={20} strokeWidth={2.3} aria-hidden="true" />
+          <House size={17} strokeWidth={2.2} aria-hidden="true" />
           <span>Trang chủ</span>
         </button>
         <button
@@ -105,7 +105,7 @@ export function App() {
           aria-current={view === "queue" ? "page" : undefined}
           onClick={() => setView("queue")}
         >
-          <Hourglass size={20} strokeWidth={2.3} aria-hidden="true" />
+          <Hourglass size={17} strokeWidth={2.2} aria-hidden="true" />
           <span>Hàng đợi</span>
           {queueCount !== null && queueCount > 0 && (
             <span className="tab-badge" data-testid="queue-badge">

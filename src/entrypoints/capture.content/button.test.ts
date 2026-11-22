@@ -10,17 +10,17 @@ import { createCaptureButton } from "./button";
 const label = (button: ReturnType<typeof createCaptureButton>) =>
   button.element.querySelector(".braintot-button__label")?.textContent;
 
-describe("nút Lưu vào BrainTot theo trạng thái liên kết (spec/62)", () => {
+describe("nút Lưu vào QuizKard theo trạng thái liên kết (spec/62)", () => {
   it("đã liên kết → nhãn lưu", () => {
     const button = createCaptureButton(() => {});
-    expect(label(button)).toBe("Lưu vào BrainTot");
+    expect(label(button)).toBe("Lưu vào QuizKard");
   });
 
-  it("chưa liên kết → nhãn mời đồng bộ với BrainTot Web, vẫn bấm được", () => {
+  it("chưa liên kết → nhãn mời đồng bộ với QuizKard Web, vẫn bấm được", () => {
     const onClick = vi.fn();
     const button = createCaptureButton(onClick);
     button.setLinkStatus("unlinked");
-    expect(label(button)).toBe("Đồng bộ với BrainTot Web");
+    expect(label(button)).toBe("Đồng bộ với QuizKard Web");
     button.element.click();
     expect(onClick).toHaveBeenCalledTimes(1);
   });
@@ -28,8 +28,18 @@ describe("nút Lưu vào BrainTot theo trạng thái liên kết (spec/62)", () 
   it("hết hạn → nhãn liên kết lại; liên kết xong → quay về nhãn lưu", () => {
     const button = createCaptureButton(() => {});
     button.setLinkStatus("expired");
-    expect(label(button)).toBe("Liên kết lại BrainTot Web");
+    expect(label(button)).toBe("Liên kết lại QuizKard Web");
     button.setLinkStatus("linked");
-    expect(label(button)).toBe("Lưu vào BrainTot");
+    expect(label(button)).toBe("Lưu vào QuizKard");
+  });
+
+  it("suppressNextClick chặn đúng 1 lần click ngay sau khi kéo thả vị trí", () => {
+    const onClick = vi.fn();
+    const button = createCaptureButton(onClick);
+    button.suppressNextClick();
+    button.element.click();
+    expect(onClick).not.toHaveBeenCalled();
+    button.element.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
   });
 });

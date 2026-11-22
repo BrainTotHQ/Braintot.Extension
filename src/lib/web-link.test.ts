@@ -40,7 +40,7 @@ import {
   openWebLinkHandshake,
 } from "./web-link";
 
-const WEB_ORIGIN = "https://braintot-web-jsgeeh2ixa-de.a.run.app";
+const WEB_ORIGIN = "https://braintot.tonythaniel.com";
 const NOW = 1_700_000_000_000;
 
 const message = (nonce: string, extra: Record<string, unknown> = {}) => ({

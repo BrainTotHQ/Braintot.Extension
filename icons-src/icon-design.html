@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>BrainTot Icon</title>
+    <title>QuizKard Icon</title>
     <style>
       * {
         box-sizing: border-box;
@@ -20,41 +20,63 @@
       }
 
       .icon {
-        position: absolute;
-        top: 0;
-        left: 0;
         display: grid;
         place-items: center;
         width: 512px;
         height: 512px;
-        overflow: hidden;
-        border-radius: 110px;
-        background: linear-gradient(135deg, #40B0E2 0%, #1591F5 100%);
+        padding: 16px;
+        background: transparent;
       }
 
-      .mascot {
-        width: 456px;
-        height: 456px;
-        overflow: hidden;
-        border: 16px solid #FFFFFF;
-        border-radius: 50%;
-        background: #12264F;
-      }
-
-      .mascot img {
+      .icon svg {
         display: block;
         width: 100%;
-        height: 100%;
-        object-fit: cover;
-        object-position: center;
+        height: auto;
       }
     </style>
   </head>
   <body>
-    <main class="icon" aria-label="BrainTot">
-      <div class="mascot">
-        <img src="../public/mascot/logo-mark.png" width="1024" height="1024" alt="Mascot BrainTot đeo kính và mũ tốt nghiệp">
-      </div>
+    <main class="icon" aria-label="QuizKard">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="2 4 234 120" fill="none">
+        <defs>
+          <linearGradient id="qkMain" x1="8" y1="112" x2="232" y2="12" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#4338EC" />
+            <stop offset="48%" stop-color="#3050FF" />
+            <stop offset="100%" stop-color="#1982FF" />
+          </linearGradient>
+          <linearGradient id="qkTail" x1="94" y1="88" x2="132" y2="120" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#0EA5FF" />
+            <stop offset="100%" stop-color="#38CCFF" />
+          </linearGradient>
+          <linearGradient id="qkFold" x1="88" y1="83" x2="115" y2="110" gradientUnits="userSpaceOnUse">
+            <stop offset="0%" stop-color="#42DCFF" />
+            <stop offset="100%" stop-color="#18B4FF" />
+          </linearGradient>
+        </defs>
+        <path
+          fill-rule="evenodd"
+          clip-rule="evenodd"
+          d="M62 8C30.52 8 5 33.07 5 64C5 94.93 30.52 120 62 120C93.48 120 119 94.93 119 64C119 33.07 93.48 8 62 8ZM62 35C78.57 35 92 47.98 92 64C92 80.02 78.57 93 62 93C45.43 93 32 80.02 32 64C32 47.98 45.43 35 62 35Z"
+          fill="url(#qkMain)"
+        />
+        <path d="M85 88Q85 84.5 89 83.5V110Q86.2 111.2 85.4 108.5Z" fill="#1E2F9E" opacity="0.3" />
+        <path
+          d="M91.5 103L109.5 85L112 88L129.6 114.8Q133 120 126.8 120H110.2Q105.5 120 102.5 116.2L91.5 103Z"
+          fill="url(#qkTail)"
+        />
+        <path
+          d="M89 89Q89 83 95 83H111Q115.5 83 112.4 86.3L92.1 107.7Q89 111 89 106.5V89Z"
+          fill="url(#qkFold)"
+        />
+        <path
+          d="M137 15Q137 8 144 8H158Q165 8 165 15V38.2Q165 42 162.8 45.1L140.4 77.1Q137 82 137 76V15Z"
+          fill="url(#qkMain)"
+        />
+        <path
+          d="M137 99Q137 94 139.9 89.9L193.6 12.9Q197 8 203 8H224.5Q231.5 8 227.1 13.4L186.5 62.7Q183 67 186.7 71L227.4 115Q232 120 225.2 120H202.2Q197 120 193.7 116L168.1 84.8Q165 81 165 85.8V113Q165 120 158 120H144Q137 120 137 113V99Z"
+          fill="url(#qkMain)"
+        />
+      </svg>
     </main>
   </body>
 </html>

@@ -8,7 +8,7 @@
  * (storage key braintot:pending-links, sort savedAt desc).
  */
 
-import { Play, Plus, RefreshCw, Sparkles, SquarePlay, Trash2 } from "lucide-react";
+import { Play, RefreshCw, Sparkles, SquarePlay, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { browser } from "wxt/browser";
 
@@ -16,10 +16,6 @@ import {
   canTransition,
   type PendingLink,
 } from "../../domain/pending-link";
-import {
-  normalizeCaptureUrl,
-  type CanonicalCapture,
-} from "../../domain/url-canonicalizer";
 import { getAuthEmail, initBackendAuth, isAuthExpired, signOut } from "../../lib/backend-auth";
 import { engineVideoId, webFlashcardsUrl } from "../../lib/backend-config";
 import { MSG_LINK_WEB, MSG_SYNC_NOW } from "../../lib/messages";
@@ -36,16 +32,13 @@ const SUBTITLE_SUFFIX_COPY = "video · chưa bật nhắc ôn";
 const PENDING_CHIP_COPY = "Đang chờ";
 const EMPTY_TITLE_COPY = "Chưa có gì ở đây";
 const EMPTY_CHIP_COPY = "Sẵn sàng cho bài học đầu tiên?";
-const EMPTY_HELPER_COPY = "Lưu video hay bạn vừa xem, BrainTot tự tách câu thành bài học:";
+const EMPTY_HELPER_COPY = "Lưu video hay bạn vừa xem, QuizKard tự tách câu thành bài học:";
 const EMPTY_STEPS_COPY = [
   "Mở video YouTube, TikTok hoặc Reels",
-  "Bấm extension BrainTot: dán link hoặc Lưu trang này",
+  "Bấm extension QuizKard rồi chọn Lưu trang này",
   "Chờ tách câu — bài học xuất hiện trên Web",
 ];
-const PASTE_PLACEHOLDER_COPY = "Dán link video để thêm";
-const PASTE_ADD_TITLE_COPY = "Thêm link vào hàng đợi";
 const RETRY_COPY = "Thử lại";
-const PASTE_ERROR_COPY = "Link chưa đúng — chỉ nhận Reels, TikTok, YouTube Shorts";
 
 /** Nhãn trạng thái + reason lỗi (mapping failureReason → tiếng Việt ngắn). */
 const STATUS_LABEL: Record<PendingLink["status"], string> = {
@@ -97,7 +90,7 @@ function QueueThumb({ link }: { link: PendingLink }) {
       {src ? (
         <img className="queue-thumb-img" src={src} alt="" loading="lazy" onError={() => setBroken(true)} />
       ) : (
-        <SquarePlay size={32} strokeWidth={2} aria-hidden="true" />
+        <SquarePlay size={20} strokeWidth={2} aria-hidden="true" />
       )}
     </div>
   );
@@ -115,8 +108,6 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [authExpired, setAuthExpired] = useState(false);
   const [filter, setFilter] = useState<QueueFilter>("all");
-  const [pasteUrl, setPasteUrl] = useState("");
-  const [pasteError, setPasteError] = useState(false);
   const videoTitles = useVideoTitles(links);
   const linkStatus = useLinkStatus();
 
@@ -184,21 +175,6 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
     } catch {
       setLinks([]);
     }
-  }
-
-  function addPaste(): void {
-    if (linkStatus !== "linked") return; // chưa liên kết tài khoản web: không lưu (spec/62)
-    const capture: CanonicalCapture | null = normalizeCaptureUrl(pasteUrl);
-    if (!capture) {
-      setPasteError(true);
-      return;
-    }
-    void (async () => {
-      await store.saveCapture(capture);
-      setPasteUrl("");
-      setPasteError(false);
-      await refreshQueue();
-    })();
   }
 
   /** failed → pending (state machine spec/13); xong refresh list + badge. */
@@ -285,7 +261,7 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
                     });
                 }}
               >
-                {authEmail ? "Liên kết lại" : "Liên kết BrainTot Web"}
+                {authEmail ? "Liên kết lại" : "Liên kết QuizKard Web"}
               </button>
             </>
           )}
@@ -294,13 +270,6 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
 
       {links !== null && links.length === 0 ? (
         <div className="empty-content">
-          <img
-            className="book-mascot"
-            src="/mascot/mascot-book.png"
-            alt="Linh vật BrainTot cầm sách"
-            width={130}
-            height={110}
-          />
           <span className="empty-chip">
             <Sparkles size={14} strokeWidth={2.4} aria-hidden="true" />
             {EMPTY_CHIP_COPY}
@@ -351,102 +320,64 @@ export function QueueView({ store, onBack, onQueueChanged }: QueueViewProps) {
                       <span className={`status-chip status-${link.status}`}>
                         {STATUS_LABEL[link.status]}
                       </span>
+                      <span
+                        className={`queue-card-detail${link.status === "failed" ? " is-error" : ""}`}
+                        title={[PLATFORM_LABEL[link.platform], formatSavedAgo(link.savedAt)]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      >
+                        {detailText(link, FAILURE_REASON_LABEL)}
+                      </span>
                     </div>
-                    <p
-                      className={`queue-card-detail${link.status === "failed" ? " is-error" : ""}`}
-                      title={[PLATFORM_LABEL[link.platform], formatSavedAgo(link.savedAt)]
-                        .filter(Boolean)
-                        .join(" · ")}
-                    >
-                      {detailText(link, FAILURE_REASON_LABEL)}
-                    </p>
                   </div>
-                  <button
-                    type="button"
-                    className="delete-button"
-                    data-testid="delete-link"
-                    aria-label="Xóa video"
-                    title="Xóa video"
-                    onClick={() => removeLink(link)}
-                  >
-                    <Trash2 size={17} strokeWidth={2.2} aria-hidden="true" />
-                  </button>
+                  <div className="queue-card-trailing">
+                    {link.status === "succeeded" && (
+                      <button
+                        type="button"
+                        className="action-button action-primary open-web-button"
+                        aria-label="Xem trên Web"
+                        title="Xem flashcard trên Web"
+                        onClick={() =>
+                          void browser.tabs.create({
+                            url: webFlashcardsUrl(engineVideoId(link)),
+                            active: true,
+                          })
+                        }
+                      >
+                        <Play size={12} strokeWidth={2.4} fill="currentColor" aria-hidden="true" />
+                        Học
+                      </button>
+                    )}
+                    {canTransition(link.status, "pending") && (
+                      <button
+                        type="button"
+                        className="action-button action-retry"
+                        data-testid="retry-link"
+                        aria-label={RETRY_COPY}
+                        title={RETRY_COPY}
+                        onClick={() => retryLink(link)}
+                      >
+                        <RefreshCw size={12} strokeWidth={2.4} aria-hidden="true" />
+                        {RETRY_COPY}
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="delete-button"
+                      data-testid="delete-link"
+                      aria-label="Xóa video"
+                      title="Xóa video"
+                      onClick={() => removeLink(link)}
+                    >
+                      <Trash2 size={14} strokeWidth={2.1} aria-hidden="true" />
+                    </button>
+                  </div>
                 </div>
-                {link.status === "succeeded" && (
-                  <div className="queue-card-actions">
-                    <button
-                      type="button"
-                      className="action-button action-primary open-web-button"
-                      aria-label="Xem trên Web"
-                      title="Xem flashcard trên Web"
-                      onClick={() =>
-                        void browser.tabs.create({
-                          url: webFlashcardsUrl(engineVideoId(link)),
-                          active: true,
-                        })
-                      }
-                    >
-                      <Play size={18} strokeWidth={2.4} fill="currentColor" aria-hidden="true" />
-                      Học ngay
-                    </button>
-                  </div>
-                )}
-                {canTransition(link.status, "pending") && (
-                  <div className="queue-card-actions">
-                    <button
-                      type="button"
-                      className="action-button action-retry"
-                      data-testid="retry-link"
-                      aria-label={RETRY_COPY}
-                      title={RETRY_COPY}
-                      onClick={() => retryLink(link)}
-                    >
-                      <RefreshCw size={18} strokeWidth={2.4} aria-hidden="true" />
-                      {RETRY_COPY}
-                    </button>
-                  </div>
-                )}
               </li>
             ))}
           </ol>
 
-          {linkStatus === "linked" ? (
-            <footer className="queue-footer">
-              <form
-                className="queue-paste"
-                aria-label="Thêm link video vào hàng đợi"
-                onSubmit={(event) => event.preventDefault()}
-              >
-                <input
-                  data-testid="queue-paste-input"
-                  className="queue-paste-input"
-                  type="url"
-                  placeholder={PASTE_PLACEHOLDER_COPY}
-                  value={pasteUrl}
-                  onChange={(event) => {
-                    setPasteUrl(event.target.value);
-                    setPasteError(false);
-                  }}
-                />
-                <button
-                  type="button"
-                  className="queue-add-button"
-                  data-testid="queue-paste-add"
-                  title={PASTE_ADD_TITLE_COPY}
-                  aria-label={PASTE_ADD_TITLE_COPY}
-                  disabled={pasteUrl.trim() === ""}
-                  onClick={addPaste}
-                >
-                  <Plus size={18} strokeWidth={2.8} aria-hidden="true" />
-                </button>
-              </form>
-              {pasteError && (
-                <p className="paste-error queue-paste-error" role="alert">
-                  {PASTE_ERROR_COPY}
-                </p>
-              )}
-            </footer>
-          ) : linkStatus === "loading" ? null : (
+          {linkStatus !== "linked" && linkStatus !== "loading" && (
             <footer className="queue-footer">
               <LinkGate expired={linkStatus === "expired"} compact />
             </footer>

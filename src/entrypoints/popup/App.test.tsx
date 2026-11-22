@@ -94,15 +94,19 @@ beforeEach(() => {
   getLinkStatusMock.mockReset().mockReturnValue("linked");
 });
 
-describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
-  it("(a) dán link TikTok hợp lệ → QueueStore lưu vào storage + banner thành công, sang queue thấy card", async () => {
+describe("App — popup lưu trang hiện tại + hàng đợi", () => {
+  it("(a) tab TikTok hợp lệ → bấm Lưu trang này lưu vào storage + banner thành công, sang queue thấy card", async () => {
+    tabsQuery.mockResolvedValue([
+      { url: "https://www.tiktok.com/@creator/video/1234567890123456789?utm_source=x" },
+    ]);
     render(<App />);
-    fireEvent.change(await screen.findByLabelText("Dán link video vừa xem"), {
-      target: { value: "https://www.tiktok.com/@creator/video/1234567890123456789?utm_source=x" },
+    const button = await screen.findByRole("button", { name: "Lưu trang này" });
+    await waitFor(() => {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu vào BrainTot" }));
+    fireEvent.click(button);
 
-    expect(await screen.findByText("✓ Đã lưu link")).toBeTruthy();
+    expect(await screen.findByText("Đã lưu link")).toBeTruthy();
     await waitFor(() => {
       const links = storedLinks();
       expect(links).toHaveLength(1);
@@ -120,20 +124,22 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect(screen.getByText("Đang chờ")).toBeTruthy();
     expect(screen.getByText("@creator")).toBeTruthy();
 
-    // Về trang chủ qua tab (không còn nút Quay lại — tab bar là điều hướng).
+    // Về trang chủ qua tab.
     fireEvent.click(await screen.findByTestId("tab-home"));
-    expect(await screen.findByLabelText("Dán link video vừa xem")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
     await act(async () => {});
   });
 
-  it("(b) dán link rút gọn vm.tiktok.com → lưu ngay với URL gốc (engine tự resolve — spec 33)", async () => {
+  it("(b) tab link rút gọn vm.tiktok.com → lưu ngay với URL gốc (engine tự resolve — spec 33)", async () => {
+    tabsQuery.mockResolvedValue([{ url: "https://vm.tiktok.com/abc" }]);
     render(<App />);
-    fireEvent.change(await screen.findByLabelText("Dán link video vừa xem"), {
-      target: { value: "https://vm.tiktok.com/abc" },
+    const button = await screen.findByRole("button", { name: "Lưu trang này" });
+    await waitFor(() => {
+      expect((button as HTMLButtonElement).disabled).toBe(false);
     });
-    fireEvent.click(screen.getByRole("button", { name: "Lưu vào BrainTot" }));
+    fireEvent.click(button);
 
-    expect(await screen.findByText("✓ Đã lưu link")).toBeTruthy();
+    expect(await screen.findByText("Đã lưu link")).toBeTruthy();
     await waitFor(() => {
       const links = storedLinks();
       expect(links).toHaveLength(1);
@@ -143,20 +149,19 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     });
   });
 
-  it("(c) hàng đợi rỗng → empty state kiểu mobile: mascot + 'Chưa có gì ở đây' + thẻ 3 bước", async () => {
+  it("(c) hàng đợi rỗng → empty state kiểu mobile: 'Chưa có gì ở đây' + thẻ 3 bước", async () => {
     render(<App />);
     fireEvent.click(await screen.findByTestId("tab-queue"));
 
-    expect(await screen.findByAltText("Linh vật BrainTot cầm sách")).toBeTruthy();
-    expect(screen.getByRole("heading", { level: 2, name: "Hàng đợi" })).toBeTruthy();
+    expect(await screen.findByRole("heading", { level: 2, name: "Hàng đợi" })).toBeTruthy();
     expect(screen.getByText("Chưa có gì ở đây")).toBeTruthy();
     const steps = screen.getByTestId("queue-empty-steps");
     expect(steps.textContent).toContain("Mở video YouTube, TikTok hoặc Reels");
-    expect(steps.textContent).toContain("Bấm extension BrainTot: dán link hoặc Lưu trang này");
+    expect(steps.textContent).toContain("Bấm extension QuizKard rồi chọn Lưu trang này");
     expect(steps.textContent).toContain("Chờ tách câu — bài học xuất hiện trên Web");
 
     fireEvent.click(await screen.findByTestId("tab-home"));
-    expect(await screen.findByLabelText("Dán link video vừa xem")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
     await act(async () => {});
   });
 
@@ -181,19 +186,15 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
       expect((button as HTMLButtonElement).disabled).toBe(false);
     });
     fireEvent.click(button);
-    expect(await screen.findByText("✓ Đã lưu link")).toBeTruthy();
+    expect(await screen.findByText("Đã lưu link")).toBeTruthy();
     expect(storedLinks()[0]?.url).toBe("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
   });
 
-  it("(f) CTA 'Lưu vào BrainTot' disabled khi input rỗng, có link thì bật", async () => {
+  it("(f) trang chủ chỉ có nút 'Lưu trang này', không còn ô dán link hay nút 'Xem hàng đợi' ở footer", async () => {
     render(<App />);
-    const cta = await screen.findByRole("button", { name: "Lưu vào BrainTot" });
-    expect((cta as HTMLButtonElement).disabled).toBe(true);
-
-    fireEvent.change(screen.getByLabelText("Dán link video vừa xem"), {
-      target: { value: "https://www.facebook.com/reel/9876543210" },
-    });
-    expect((cta as HTMLButtonElement).disabled).toBe(false);
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
+    expect(screen.queryByLabelText("Dán link video vừa xem")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Xem hàng đợi" })).toBeNull();
 
     // Chờ promise tabs.query (useEffect) kết thúc trong act — output pristine.
     await act(async () => {});
@@ -201,10 +202,9 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
 
   it("(g) view home hiện header greeting + promo với copy verbatim", async () => {
     render(<App />);
-    expect(await screen.findByAltText("BrainTot")).toBeTruthy();
+    expect(await screen.findByAltText("QuizKard")).toBeTruthy();
     expect(screen.getByText("Học từ chính video bạn xem hôm nay")).toBeTruthy();
-    expect(await screen.findByAltText("Linh vật BrainTot chia sẻ video")).toBeTruthy();
-    expect(screen.getByText("Gặp video hay? Lưu 1 chạm về BrainTot!")).toBeTruthy();
+    expect(screen.getByText("Gặp video hay? Lưu 1 chạm về QuizKard!")).toBeTruthy();
 
     // Chờ promise tabs.query (useEffect) kết thúc trong act — output pristine.
     await act(async () => {});
@@ -264,12 +264,12 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     }
 
     // Mọi nền tảng mở /flashcards?video=<videoId theo engine> (spec/57)
-    expect(openedUrls).toContain("https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=uSjtxnvCacA");
+    expect(openedUrls).toContain("https://braintot.tonythaniel.com/flashcards?video=uSjtxnvCacA");
     expect(openedUrls).toContain(
-      "https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=tt_7628629210445204756",
+      "https://braintot.tonythaniel.com/flashcards?video=tt_7628629210445204756",
     );
     expect(openedUrls).toContain(
-      "https://braintot-web-jsgeeh2ixa-de.a.run.app/flashcards?video=fb_2431405740998979",
+      "https://braintot.tonythaniel.com/flashcards?video=fb_2431405740998979",
     );
 
     // Link pending: chỉ chip chờ, không có nút web cho link chưa xử lý.
@@ -292,7 +292,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect(await screen.findByText(/user@gmail.com/)).toBeTruthy();
     expect(screen.getByRole("button", { name: "Đăng xuất" })).toBeTruthy();
     // Chưa liên kết thì có nút liên kết — đã liên kết thì không còn.
-    expect(screen.queryByRole("button", { name: "Liên kết BrainTot Web" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Liên kết QuizKard Web" })).toBeNull();
 
     await act(async () => {});
   });
@@ -385,7 +385,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect(tabQueue.getAttribute("aria-current")).toBe("page");
 
     fireEvent.click(tabHome);
-    expect(await screen.findByLabelText("Dán link video vừa xem")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
     await act(async () => {});
   });
 
@@ -413,7 +413,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     fireEvent.click(screen.getByTestId("open-web"));
     expect(tabsCreate).toHaveBeenCalledTimes(1);
     expect(tabsCreate.mock.calls[0]?.[0]).toEqual({
-      url: "https://braintot-web-jsgeeh2ixa-de.a.run.app",
+      url: "https://braintot.tonythaniel.com",
       active: true,
     });
     await act(async () => {});
@@ -479,7 +479,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     await act(async () => {});
   });
 
-  it("(p) không có stats → ẩn cả dashboard (không có ô '—'), chip streak ẩn, vẫn có ô dán link và số video đã lưu", async () => {
+  it("(p) không có stats → ẩn cả dashboard (không có ô '—'), chip streak ẩn, vẫn có nút Lưu trang này và số video đã lưu", async () => {
     storageData.set("braintot:pending-links", {
       one: {
         id: "a".repeat(64),
@@ -492,7 +492,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     });
     render(<App />);
 
-    expect(await screen.findByLabelText("Lưu bằng đường dẫn video")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
     expect(screen.queryByTestId("stats-grid")).toBeNull();
     expect(screen.queryByTestId("goal-card")).toBeNull();
     expect(screen.queryByTestId("streak-week")).toBeNull();
@@ -600,7 +600,7 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     expect(await screen.findByTestId("link-gate")).toBeTruthy();
     expect(screen.getByText("Đăng nhập để lưu video")).toBeTruthy();
     expect(screen.queryByLabelText("Lưu bằng đường dẫn video")).toBeNull();
-    expect(screen.queryByText("Lưu vào BrainTot")).toBeNull();
+    expect(screen.queryByText("Lưu vào QuizKard")).toBeNull();
     expect(screen.queryByText("Lưu trang này")).toBeNull();
     // Cả dashboard và tab bar đều ẩn: chưa đăng nhập thì không dùng được app.
     expect(screen.queryByTestId("tab-queue")).toBeNull();
@@ -621,9 +621,9 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     await act(async () => {});
   });
 
-  it("(gate-3) đã liên kết → có ô dán link và không có gate", async () => {
+  it("(gate-3) đã liên kết → có nút Lưu trang này và không có gate", async () => {
     render(<App />);
-    expect(await screen.findByLabelText("Lưu bằng đường dẫn video")).toBeTruthy();
+    expect(await screen.findByRole("button", { name: "Lưu trang này" })).toBeTruthy();
     expect(screen.queryByTestId("link-gate")).toBeNull();
     await act(async () => {});
   });
@@ -644,33 +644,14 @@ describe("App — popup paste link + hàng đợi (Playful 3D)", () => {
     await act(async () => {});
   });
 
-  it("(s) paste bar trong hàng đợi: link hợp lệ và link rút gọn đều lưu ngay (spec 33)", async () => {
+  it("(s) hàng đợi không còn ô dán link ở footer", async () => {
     seedFourLinks();
     render(<App />);
     fireEvent.click(await screen.findByTestId("tab-queue"));
     await screen.findByText("4 video · chưa bật nhắc ôn");
 
-    const before = storedLinks().length;
-    fireEvent.change(screen.getByTestId("queue-paste-input"), {
-      target: { value: "https://www.tiktok.com/@new/video/8888888888888888888" },
-    });
-    fireEvent.click(screen.getByTestId("queue-paste-add"));
-    await waitFor(() => {
-      expect(storedLinks().length).toBe(before + 1);
-    });
-    // Chip Tất cả cập nhật ngay (5), input đã xoá.
-    expect(screen.getByTestId("filter-all").textContent).toContain("5");
-    expect((screen.getByTestId("queue-paste-input") as HTMLInputElement).value).toBe("");
-
-    fireEvent.change(screen.getByTestId("queue-paste-input"), {
-      target: { value: "https://vm.tiktok.com/abc" },
-    });
-    fireEvent.click(screen.getByTestId("queue-paste-add"));
-    // spec 33: short-link cũng được lưu với URL gốc (engine tự resolve redirect)
-    await waitFor(() => {
-      expect(storedLinks().length).toBe(before + 2);
-    });
-    expect((screen.getByTestId("queue-paste-input") as HTMLInputElement).value).toBe("");
+    expect(screen.queryByTestId("queue-paste-input")).toBeNull();
+    expect(screen.queryByTestId("queue-paste-add")).toBeNull();
     await act(async () => {});
   });
 });

@@ -13,7 +13,7 @@ import { readWebSession } from "../lib/web-session";
 const POLL_MS = 5_000;
 
 export default defineContentScript({
-  matches: ["https://braintot-web-jsgeeh2ixa-de.a.run.app/*"],
+  matches: ["https://braintot.tonythaniel.com/*"],
   main() {
     let lastRaw: string | null = null;
     const push = (): void => {

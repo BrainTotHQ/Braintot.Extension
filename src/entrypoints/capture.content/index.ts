@@ -11,63 +11,162 @@ import { defineContentScript } from "wxt/utils/define-content-script";
 
 import { getLinkStatus, initBackendAuth, reloadAuth } from "../../lib/backend-auth";
 import { buildCapturePayload } from "../../lib/capture-payload";
-import type { CaptureSaveResponse } from "../../lib/messages";
+import {
+  MSG_GET_ACTIVE_URL,
+  type ActiveUrlResponse,
+  type CaptureSaveResponse,
+} from "../../lib/messages";
 
+import { resolveActiveCaptureUrl } from "./active-url";
 import { BUTTON_STYLE, createCaptureButton, type CaptureButton } from "./button";
 import { TOAST_STYLE, createCaptureToast, type CaptureToast } from "./toast";
 
 const HOST_ID = "braintot-capture-root";
 const SOURCE = "content-button" as const;
+const DOCK_Y_STORAGE_KEY = "braintot:dock-y-ratio";
+const DEFAULT_DOCK_Y_RATIO = 0.34;
+const DOCK_MIN_TOP = 64;
+const DOCK_BOTTOM_MARGIN = 64;
+const DRAG_THRESHOLD_PX = 5;
 
 // Copy verbatim — không chỉnh từng ký tự.
-const TOAST_SAVED = "✓ Đã lưu link — mở BrainTot để xem hàng đợi";
+const TOAST_SAVED = "Đã lưu link — mở QuizKard để xem hàng đợi";
 const TOAST_INVALID = "Link chưa đúng — chỉ nhận Reels, TikTok, YouTube Shorts";
 const TOAST_ERROR = "Có lỗi khi lưu — thử lại";
-const TOAST_LOGIN = "Hãy đăng nhập BrainTot để lưu video — đã mở trang liên kết";
+const TOAST_LOGIN = "Hãy đăng nhập QuizKard để lưu video — đã mở trang liên kết";
 
-const HOST_STYLE = {
+function clampDockTop(px: number): number {
+  const maxTop = Math.max(DOCK_MIN_TOP, window.innerHeight - DOCK_BOTTOM_MARGIN);
+  return Math.min(maxTop, Math.max(DOCK_MIN_TOP, Math.round(px)));
+}
+
+function topFromRatio(ratio: number): number {
+  const safeRatio = Number.isFinite(ratio) ? Math.min(0.95, Math.max(0.05, ratio)) : DEFAULT_DOCK_Y_RATIO;
+  return clampDockTop(window.innerHeight * safeRatio);
+}
+
+/** Tab dính mép phải kiểu eJOY: thu gọn chỉ hiện logo QK, hover trượt mở, kéo dọc để chỉnh độ cao. */
+const HOST_STYLE: Partial<CSSStyleDeclaration> = {
   position: "fixed",
-  right: "16px",
-  bottom: "16px",
+  right: "0px",
   zIndex: "2147483647",
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "flex-end",
+  gap: "8px",
   // Container không nuốt click; riêng nút bật lại qua .braintot-button.
   pointerEvents: "none",
-} as const;
+};
 
 export default defineContentScript({
   matches: ["*://*.youtube.com/*", "*://*.tiktok.com/*", "*://*.facebook.com/*"],
   main(ctx) {
-    console.info("[BrainTot] content script ready (capture button)");
+    console.info("[QuizKard] content script ready (capture button)");
 
     const button: CaptureButton = createCaptureButton(() => void saveCurrentPage());
     const toast: CaptureToast = createCaptureToast();
 
     let host: HTMLDivElement | null = null;
     let shadow: ShadowRoot | null = null;
+    let dockClip: HTMLDivElement | null = null;
     let mounted = false;
-    let lastHref: string | null = null;
+    let lastTargetUrl: string | null = null;
     let saveInFlight = false;
+    let dockRatio = DEFAULT_DOCK_Y_RATIO;
+
+    function applyDockPosition(topPx: number): void {
+      if (!host) return;
+      host.style.top = `${clampDockTop(topPx)}px`;
+    }
+
+    // Nạp độ cao người dùng đã kéo lần trước (nếu có).
+    void browser.storage.local
+      .get(DOCK_Y_STORAGE_KEY)
+      .then((bag) => {
+        const stored = bag[DOCK_Y_STORAGE_KEY];
+        if (typeof stored === "number" && Number.isFinite(stored)) {
+          dockRatio = stored;
+          applyDockPosition(topFromRatio(dockRatio));
+        }
+      })
+      .catch(() => {
+        /* giữ vị trí mặc định */
+      });
+
+    // Kéo thả dọc theo mép phải màn hình (chỉ cần kéo ≥ 5px là chuyển sang kéo thay vì bấm lưu).
+    let dragStartY = 0;
+    let dragStartTop = 0;
+    let dragging = false;
+    let pointerActive = false;
+
+    const onPointerDown = (event: PointerEvent): void => {
+      if (event.button !== 0 || !host) return;
+      pointerActive = true;
+      dragging = false;
+      dragStartY = event.clientY;
+      dragStartTop = host.getBoundingClientRect().top;
+    };
+
+    const onPointerMove = (event: PointerEvent): void => {
+      if (!pointerActive || !host) return;
+      const deltaY = event.clientY - dragStartY;
+      if (!dragging && Math.abs(deltaY) < DRAG_THRESHOLD_PX) return;
+      if (!dragging) {
+        dragging = true;
+        button.element.dataset.dragging = "true";
+      }
+      applyDockPosition(dragStartTop + deltaY);
+    };
+
+    const onPointerUp = (): void => {
+      if (!pointerActive) return;
+      pointerActive = false;
+      if (dragging && host) {
+        dragging = false;
+        delete button.element.dataset.dragging;
+        button.suppressNextClick();
+        const currentTop = host.getBoundingClientRect().top;
+        dockRatio = window.innerHeight > 0 ? currentTop / window.innerHeight : DEFAULT_DOCK_Y_RATIO;
+        void browser.storage.local.set({ [DOCK_Y_STORAGE_KEY]: dockRatio }).catch(() => {
+          /* không lưu được vị trí vẫn giữ vị trí hiện tại */
+        });
+      }
+    };
+
+    button.element.addEventListener("pointerdown", onPointerDown);
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+    window.addEventListener("pointercancel", onPointerUp);
+
+    const onResize = (): void => {
+      applyDockPosition(topFromRatio(dockRatio));
+    };
+    window.addEventListener("resize", onResize);
 
     /** Tạo (hoặc tạo lại nếu host page đã gỡ) host div + shadow root. */
     function ensureShadowRoot(): ShadowRoot {
-      if (shadow && host?.isConnected) return shadow;
+      if (shadow && host?.isConnected && dockClip) return shadow;
 
       host?.remove();
       host = document.createElement("div");
       host.id = HOST_ID;
       Object.assign(host.style, HOST_STYLE);
+      applyDockPosition(topFromRatio(dockRatio));
       shadow = host.attachShadow({ mode: "open" });
 
       const style = document.createElement("style");
       style.textContent = BUTTON_STYLE + TOAST_STYLE;
-      shadow.append(style, toast.element);
+      dockClip = document.createElement("div");
+      dockClip.className = "braintot-dock-clip";
+      shadow.append(style, dockClip, toast.element);
 
       (document.body ?? document.documentElement).append(host);
       return shadow;
     }
 
     function mount(): void {
-      ensureShadowRoot().append(button.element);
+      ensureShadowRoot();
+      dockClip?.append(button.element);
       // Mỗi URL video là một video mới — luôn reset về idle.
       button.setState("idle");
       mounted = true;
@@ -81,26 +180,34 @@ export default defineContentScript({
     }
 
     /**
-     * Re-evaluate theo URL hiện tại — idempotent, chỉ đụng DOM khi trạng thái
-     * thực sự đổi (poll 1s + mutation bắn dồn dập thì skip ngay).
+     * Re-evaluate theo URL hiện tại (kể cả video đang phát trên TikTok For You feed) —
+     * idempotent, chỉ đụng DOM khi video thực sự đổi.
      */
     function evaluate(): void {
       // Nhãn nút theo trạng thái liên kết (tính từ phiên đã nạp, rẻ, kể cả khi token vừa hết hạn).
       button.setLinkStatus(getLinkStatus());
-      const href = location.href;
-      const isShort = buildCapturePayload(href, SOURCE) !== null;
-      if (href === lastHref && isShort === mounted) return;
-      lastHref = href;
+      const activeUrl = resolveActiveCaptureUrl(document, location.href);
+      const payload = activeUrl ? buildCapturePayload(activeUrl, SOURCE) : null;
+      const targetUrl = payload?.url ?? null;
 
-      if (isShort) mount();
-      else unmount();
+      if (targetUrl === lastTargetUrl && (payload !== null) === mounted) {
+        return;
+      }
+      lastTargetUrl = targetUrl;
+
+      if (payload) {
+        mount();
+      } else {
+        unmount();
+      }
     }
 
     /** Click flow: build payload → sendMessage → toast theo mọi nhánh response. */
     async function saveCurrentPage(): Promise<void> {
       if (saveInFlight || button.getState() === "saved") return;
 
-      const request = buildCapturePayload(location.href, SOURCE);
+      const activeUrl = resolveActiveCaptureUrl(document, location.href);
+      const request = activeUrl ? buildCapturePayload(activeUrl, SOURCE) : null;
       if (!request) {
         // Trang đổi URL giữa chừng (đã rời video ngắn trước khi bấm).
         toast.show(TOAST_INVALID);
@@ -151,11 +258,31 @@ export default defineContentScript({
     };
     browser.storage.onChanged.addListener(onStorageChanged);
 
-    // --- SPA watcher (3 cơ chế) -------------------------------------------
+    const onMessage = (message: unknown): Promise<ActiveUrlResponse> | undefined => {
+      if (
+        typeof message === "object" &&
+        message !== null &&
+        (message as { type?: unknown }).type === MSG_GET_ACTIVE_URL
+      ) {
+        return Promise.resolve({ url: resolveActiveCaptureUrl(document, location.href) });
+      }
+      return undefined;
+    };
+    browser.runtime.onMessage.addListener(onMessage);
+
+    // --- SPA watcher (4 cơ chế) -------------------------------------------
     // 1) YouTube bắn yt-navigate-finish sau mỗi điều hướng trong app.
     document.addEventListener("yt-navigate-finish", evaluate);
 
-    // 2) TikTok/Facebook đổi document.title khi điều hướng — quan sát chính
+    // 2) TikTok For You cuộn sang video mới không đổi URL — bắt scroll có debounce nhẹ.
+    let scrollTimer: ReturnType<typeof setTimeout> | undefined;
+    const onScroll = (): void => {
+      if (scrollTimer !== undefined) clearTimeout(scrollTimer);
+      scrollTimer = setTimeout(evaluate, 200);
+    };
+    window.addEventListener("scroll", onScroll, { capture: true, passive: true });
+
+    // 3) TikTok/Facebook đổi document.title khi điều hướng — quan sát chính
     //    phần tử <title> (kèm head để bắt lúc <title> bị thay thế).
     const titleObserver = new MutationObserver(() => {
       watchTitle();
@@ -172,13 +299,21 @@ export default defineContentScript({
     }
     watchTitle();
 
-    // 3) Poll 1s phủ mọi trường hợp còn lại (pushState không bắn event nào).
+    // 4) Poll 1s phủ mọi trường hợp còn lại (pushState / autoplay không bắn event nào).
     ctx.setInterval(evaluate, 1_000);
 
     // Cleanup khi context invalidated (extension reload/update) — không leak.
     ctx.onInvalidated(() => {
+      if (scrollTimer !== undefined) clearTimeout(scrollTimer);
+      button.element.removeEventListener("pointerdown", onPointerDown);
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+      window.removeEventListener("pointercancel", onPointerUp);
+      window.removeEventListener("resize", onResize);
       document.removeEventListener("yt-navigate-finish", evaluate);
+      window.removeEventListener("scroll", onScroll, { capture: true });
       browser.storage.onChanged.removeListener(onStorageChanged);
+      browser.runtime.onMessage.removeListener(onMessage);
       titleObserver.disconnect();
       unmount();
       host?.remove();
