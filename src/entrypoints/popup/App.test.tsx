@@ -204,7 +204,7 @@ describe("App — popup lưu trang hiện tại + hàng đợi", () => {
     render(<App />);
     expect(await screen.findByAltText("QuizKard")).toBeTruthy();
     expect(screen.getByText("Học từ chính video bạn xem hôm nay")).toBeTruthy();
-    expect(screen.getByText("Gặp video hay? Lưu 1 chạm về QuizKard!")).toBeTruthy();
+    expect(await screen.findByText("Gặp video hay? Lưu 1 chạm về QuizKard!")).toBeTruthy();
 
     // Chờ promise tabs.query (useEffect) kết thúc trong act — output pristine.
     await act(async () => {});

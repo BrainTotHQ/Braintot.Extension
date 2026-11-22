@@ -44,6 +44,7 @@ const PROMO_COPY = "Gặp video hay? Lưu 1 chạm về QuizKard!";
 const SAVE_PAGE_COPY = "Lưu trang này";
 const SAVE_PAGE_HINT_IDLE = "Mở YouTube Shorts, TikTok hoặc Facebook Reels để lưu nhanh.";
 const SAVE_PAGE_HINT_READY = "Đã nhận diện video ngắn trên tab hiện tại.";
+const SAVE_PAGE_HINT_TOO_LONG = "Video dài quá 3 phút — chỉ hỗ trợ video ngắn tối đa 3 phút.";
 const SUCCESS_COPY = "Đã lưu link";
 const OPEN_QUEUE_COPY = "Xem hàng đợi";
 
@@ -88,12 +89,13 @@ export function HomeView({
 }: HomeViewProps) {
   const [saved, setSaved] = useState(false);
   const [pageCapture, setPageCapture] = useState<CanonicalCapture | null>(null);
+  const [pageTooLong, setPageTooLong] = useState(false);
   const [authEmail, setAuthEmail] = useState<string | null>(null);
   const [stats, setStats] = useState<UserStats | null>(null);
   const linkStatus = useLinkStatus();
 
   // Đọc tab hiện tại 1 lần (hợp lệ nhờ activeTab): URL chuẩn hóa được → enabled.
-  // Nếu URL là TikTok feed (chưa có /video/ trên thanh địa chỉ), hỏi content script URL bài đang phát.
+  // Đồng thời hỏi content script để lấy URL TikTok For You và kiểm tra giới hạn thời lượng (> 3 phút).
   useEffect(() => {
     let cancelled = false;
     browser.tabs
@@ -102,28 +104,31 @@ export function HomeView({
         if (cancelled) return;
         const tab = tabs[0];
         const direct = normalizeCaptureUrl(tab?.url ?? "");
-        if (direct) {
-          setPageCapture(direct);
-          return;
-        }
+        let resolved: CanonicalCapture | null = direct;
+        let tooLong = false;
+
         if (tab?.id !== undefined && typeof browser.tabs.sendMessage === "function") {
           try {
             const response = (await browser.tabs.sendMessage(tab.id, {
               type: MSG_GET_ACTIVE_URL,
             })) as ActiveUrlResponse | undefined;
-            if (!cancelled) {
-              setPageCapture(normalizeCaptureUrl(response?.url ?? ""));
+            if (!resolved && response?.url) {
+              resolved = normalizeCaptureUrl(response.url);
             }
-            return;
+            if (response?.tooLong) tooLong = true;
           } catch {
-            /* tab không có content script — bỏ qua */
+            /* tab không có content script — dùng kết quả từ tab.url */
           }
         }
-        if (!cancelled) setPageCapture(null);
+        if (!cancelled) {
+          setPageCapture(resolved);
+          setPageTooLong(tooLong);
+        }
       })
       .catch(() => {
         if (cancelled) return;
         setPageCapture(null);
+        setPageTooLong(false);
       });
     return () => {
       cancelled = true;
@@ -328,16 +333,26 @@ export function HomeView({
             )}
 
             <section className="save-page-card">
-              <p className={`save-page-hint${pageCapture ? " is-ready" : ""}`}>
-                {pageCapture ? SAVE_PAGE_HINT_READY : SAVE_PAGE_HINT_IDLE}
+              <p className={`save-page-hint${pageCapture && !pageTooLong ? " is-ready" : ""}`}>
+                {pageTooLong
+                  ? SAVE_PAGE_HINT_TOO_LONG
+                  : pageCapture
+                    ? SAVE_PAGE_HINT_READY
+                    : SAVE_PAGE_HINT_IDLE}
               </p>
               <button
                 type="button"
                 className="popup-button save-link save-page"
-                disabled={!pageCapture}
-                title={pageCapture ? PAGE_ENABLED_TITLE : PAGE_DISABLED_TITLE}
+                disabled={!pageCapture || pageTooLong}
+                title={
+                  pageTooLong
+                    ? SAVE_PAGE_HINT_TOO_LONG
+                    : pageCapture
+                      ? PAGE_ENABLED_TITLE
+                      : PAGE_DISABLED_TITLE
+                }
                 onClick={() => {
-                  if (pageCapture) void save(pageCapture);
+                  if (pageCapture && !pageTooLong) void save(pageCapture);
                 }}
               >
                 <BookmarkPlus size={16} strokeWidth={2.2} aria-hidden="true" />

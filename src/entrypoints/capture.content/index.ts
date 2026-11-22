@@ -17,7 +17,11 @@ import {
   type CaptureSaveResponse,
 } from "../../lib/messages";
 
-import { resolveActiveCaptureUrl } from "./active-url";
+import {
+  isDurationTooLong,
+  resolveActiveCaptureUrl,
+  resolveActiveVideoDurationSec,
+} from "./active-url";
 import { BUTTON_STYLE, createCaptureButton, type CaptureButton } from "./button";
 import { TOAST_STYLE, createCaptureToast, type CaptureToast } from "./toast";
 
@@ -181,7 +185,7 @@ export default defineContentScript({
 
     /**
      * Re-evaluate theo URL hiện tại (kể cả video đang phát trên TikTok For You feed) —
-     * idempotent, chỉ đụng DOM khi video thực sự đổi.
+     * idempotent, chỉ đụng DOM khi video hoặc giới hạn thời lượng (> 3 phút) đổi.
      */
     function evaluate(): void {
       // Nhãn nút theo trạng thái liên kết (tính từ phiên đã nạp, rẻ, kể cả khi token vừa hết hạn).
@@ -189,6 +193,8 @@ export default defineContentScript({
       const activeUrl = resolveActiveCaptureUrl(document, location.href);
       const payload = activeUrl ? buildCapturePayload(activeUrl, SOURCE) : null;
       const targetUrl = payload?.url ?? null;
+      const durationSec = payload ? resolveActiveVideoDurationSec(document, location.href) : null;
+      button.setTooLong(isDurationTooLong(durationSec));
 
       if (targetUrl === lastTargetUrl && (payload !== null) === mounted) {
         return;
@@ -211,6 +217,11 @@ export default defineContentScript({
       if (!request) {
         // Trang đổi URL giữa chừng (đã rời video ngắn trước khi bấm).
         toast.show(TOAST_INVALID);
+        return;
+      }
+      const durationSec = resolveActiveVideoDurationSec(document, location.href);
+      if (isDurationTooLong(durationSec)) {
+        button.setTooLong(true);
         return;
       }
 
@@ -264,15 +275,25 @@ export default defineContentScript({
         message !== null &&
         (message as { type?: unknown }).type === MSG_GET_ACTIVE_URL
       ) {
-        return Promise.resolve({ url: resolveActiveCaptureUrl(document, location.href) });
+        const url = resolveActiveCaptureUrl(document, location.href);
+        const durationSec = url ? resolveActiveVideoDurationSec(document, location.href) : null;
+        return Promise.resolve({
+          url,
+          durationSec,
+          tooLong: isDurationTooLong(durationSec),
+        });
       }
       return undefined;
     };
     browser.runtime.onMessage.addListener(onMessage);
 
-    // --- SPA watcher (4 cơ chế) -------------------------------------------
+    // --- SPA watcher (5 cơ chế) -------------------------------------------
     // 1) YouTube bắn yt-navigate-finish sau mỗi điều hướng trong app.
     document.addEventListener("yt-navigate-finish", evaluate);
+
+    // 2) Khi thẻ <video> nạp xong thời lượng (loadedmetadata / durationchange) → cập nhật quá 3 phút ngay.
+    document.addEventListener("loadedmetadata", evaluate, true);
+    document.addEventListener("durationchange", evaluate, true);
 
     // 2) TikTok For You cuộn sang video mới không đổi URL — bắt scroll có debounce nhẹ.
     let scrollTimer: ReturnType<typeof setTimeout> | undefined;
@@ -311,6 +332,8 @@ export default defineContentScript({
       window.removeEventListener("pointercancel", onPointerUp);
       window.removeEventListener("resize", onResize);
       document.removeEventListener("yt-navigate-finish", evaluate);
+      document.removeEventListener("loadedmetadata", evaluate, true);
+      document.removeEventListener("durationchange", evaluate, true);
       window.removeEventListener("scroll", onScroll, { capture: true });
       browser.storage.onChanged.removeListener(onStorageChanged);
       browser.runtime.onMessage.removeListener(onMessage);

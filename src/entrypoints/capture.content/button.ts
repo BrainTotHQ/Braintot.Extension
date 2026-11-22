@@ -8,11 +8,14 @@
 /** Trạng thái nút: idle (bấm được), saving (chờ response), saved (đã lưu). */
 export type CaptureButtonState = "idle" | "saving" | "saved";
 
-const LABEL_IDLE = "Lưu vào QuizKard";
-const LABEL_SAVED = "Đã lưu link";
-/** Chưa đăng nhập: nút đổi thành lời mời liên kết/đồng bộ với QuizKard Web (spec/62). */
-const LABEL_LINK = "Đồng bộ với QuizKard Web";
-const LABEL_RELINK = "Liên kết lại QuizKard Web";
+const LABEL_IDLE = "Lưu";
+const LABEL_SAVED = "Đã lưu";
+/** Chưa đăng nhập: nhãn ngắn gọn mời liên kết với QuizKard Web (spec/62). */
+const LABEL_LINK = "Đăng nhập";
+const LABEL_RELINK = "Kết nối lại";
+
+const TITLE_DEFAULT = "Lưu vào QuizKard (kéo lên/xuống để đổi vị trí)";
+const TOOLTIP_TOO_LONG = "Chỉ hỗ trợ video ngắn tối đa 3 phút";
 
 /** Logo vector QK từ braintot-web/public/logo-qk.svg — render sắc nét mọi độ phân giải. */
 const QK_LOGO_SVG = `<svg class="braintot-button__icon" xmlns="http://www.w3.org/2000/svg" viewBox="2 4 234 120" fill="none" aria-hidden="true">
@@ -41,51 +44,56 @@ const QK_LOGO_SVG = `<svg class="braintot-button__icon" xmlns="http://www.w3.org
 
 export const BUTTON_STYLE = `
   .braintot-dock-clip {
-    overflow: hidden;
+    position: relative;
+    overflow: visible;
     padding: 10px 0 14px 24px;
     margin: -10px 0 -14px 0;
     pointer-events: none;
   }
   .braintot-button {
+    position: relative;
     pointer-events: auto;
     display: inline-flex;
     align-items: center;
     gap: 8px;
-    height: 40px;
-    padding: 0 14px 0 9px;
-    border: 1px solid #DCE8F8;
+    min-width: 84px;
+    height: 44px;
+    padding: 0 16px 0 10px;
+    border: 1px solid rgba(255, 255, 255, 0.24);
     border-right: none;
     border-radius: 9999px 0 0 9999px;
-    background-color: #ffffff;
-    color: #12264F;
-    font: 600 13px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    background-color: #2563EB;
+    color: #ffffff;
+    font: 700 13.5px/1.2 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
     letter-spacing: -0.01em;
-    box-shadow: -2px 4px 12px rgba(15, 23, 42, 0.14);
+    box-shadow: -3px 6px 18px rgba(37, 99, 235, 0.3), 0 2px 6px rgba(15, 23, 42, 0.14);
+    opacity: 0.9;
     cursor: pointer;
     user-select: none;
     touch-action: none;
-    will-change: transform;
-    /* Trượt bằng GPU transform: chỉ lòi đúng 42px phần logo QK sát mép phải. */
-    transform: translateX(calc(100% - 42px));
+    will-change: transform, opacity;
+    /* Luôn hiện đủ [QK] Lưu để bấm 1 click ngay; hover chỉ nhích nhẹ 4px. */
+    transform: translateX(4px);
     transition:
-      transform 0.36s cubic-bezier(0.25, 0.8, 0.25, 1),
-      background-color 0.28s ease,
-      border-color 0.28s ease,
-      color 0.28s ease,
-      box-shadow 0.28s ease;
+      transform 0.18s ease,
+      opacity 0.18s ease,
+      background-color 0.18s ease,
+      box-shadow 0.18s ease;
   }
-  .braintot-button:hover,
-  .braintot-button:focus-visible,
-  .braintot-button[data-state="saving"],
-  .braintot-button[data-state="saved"] {
+  .braintot-button:hover:not(:disabled),
+  .braintot-button:focus-visible {
     transform: translateX(0);
-    border-color: rgba(255, 255, 255, 0.22);
-    background-color: #2563EB;
-    color: #ffffff;
-    box-shadow: -4px 8px 20px rgba(37, 99, 235, 0.32);
+    opacity: 1;
+    background-color: #1D4ED8;
+    box-shadow: -4px 8px 22px rgba(37, 99, 235, 0.4), 0 3px 8px rgba(15, 23, 42, 0.16);
+  }
+  .braintot-button:active:not(:disabled) {
+    transform: translateX(1px);
   }
   .braintot-button[data-dragging="true"] {
     cursor: grabbing;
+    opacity: 1;
+    transition: none;
   }
   .braintot-button:focus-visible {
     outline: 2px solid #2563EB;
@@ -94,25 +102,65 @@ export const BUTTON_STYLE = `
   .braintot-button:disabled {
     cursor: default;
   }
+  .braintot-button[data-state="saving"] {
+    transform: translateX(0);
+    opacity: 0.95;
+  }
   .braintot-button[data-state="saved"] {
-    border-color: rgba(255, 255, 255, 0.22);
+    transform: translateX(0);
+    opacity: 1;
+    border-color: rgba(255, 255, 255, 0.24);
     background-color: #0F8A5F;
     color: #ffffff;
-    box-shadow: -4px 6px 16px rgba(15, 138, 95, 0.28);
+    box-shadow: -4px 6px 16px rgba(15, 138, 95, 0.32);
+  }
+  .braintot-button[data-too-long="true"] {
+    transform: translateX(4px);
+    opacity: 0.72;
+    border-color: rgba(255, 255, 255, 0.2);
+    background-color: #64748B;
+    color: #E2E8F0;
+    box-shadow: -2px 4px 12px rgba(15, 23, 42, 0.16);
+    cursor: not-allowed;
+  }
+  .braintot-button[data-too-long="true"]:hover,
+  .braintot-button[data-too-long="true"]:focus-visible {
+    transform: translateX(4px);
+    opacity: 0.86;
+    background-color: #64748B;
+    box-shadow: -2px 4px 12px rgba(15, 23, 42, 0.16);
+  }
+  .braintot-button[data-too-long="true"]::before {
+    content: attr(data-tooltip);
+    position: absolute;
+    right: calc(100% + 10px);
+    top: 50%;
+    transform: translateY(-50%) translateX(4px);
+    padding: 6px 10px;
+    border-radius: 8px;
+    background: #0F1F42;
+    color: #ffffff;
+    font: 500 12px/1.35 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    white-space: nowrap;
+    box-shadow: 0 6px 16px rgba(15, 31, 66, 0.24);
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.16s ease, transform 0.16s ease;
+  }
+  .braintot-button[data-too-long="true"]:hover::before,
+  .braintot-button[data-too-long="true"]:focus-visible::before {
+    opacity: 1;
+    transform: translateY(-50%) translateX(0);
   }
   .braintot-button__icon-wrap {
     display: grid;
     place-items: center;
-    width: 24px;
-    height: 24px;
+    width: 26px;
+    height: 26px;
     border-radius: 9999px;
     background: #ffffff;
-    flex-shrink: 0;
-    transition: box-shadow 0.25s ease;
-  }
-  .braintot-button:hover .braintot-button__icon-wrap,
-  .braintot-button[data-state="saved"] .braintot-button__icon-wrap {
     box-shadow: 0 1px 3px rgba(15, 23, 42, 0.14);
+    flex-shrink: 0;
   }
   .braintot-button__icon {
     display: block;
@@ -123,14 +171,6 @@ export const BUTTON_STYLE = `
   }
   .braintot-button__label {
     white-space: nowrap;
-    opacity: 0;
-    transition: opacity 0.26s ease;
-  }
-  .braintot-button:hover .braintot-button__label,
-  .braintot-button:focus-visible .braintot-button__label,
-  .braintot-button[data-state="saving"] .braintot-button__label,
-  .braintot-button[data-state="saved"] .braintot-button__label {
-    opacity: 1;
   }
 `;
 
@@ -140,6 +180,8 @@ export interface CaptureButton {
   setState(state: CaptureButtonState): void;
   /** Cập nhật nhãn theo trạng thái liên kết tài khoản web. */
   setLinkStatus(status: "linked" | "expired" | "unlinked"): void;
+  /** Khóa nút nhưng vẫn hiển thị khi video vượt quá giới hạn 3 phút. */
+  setTooLong(tooLong: boolean): void;
   /** Bỏ qua sự kiện click kế tiếp (dùng ngay sau khi người dùng vừa kéo thả dọc mép màn hình). */
   suppressNextClick(): void;
 }
@@ -148,7 +190,7 @@ export function createCaptureButton(onClick: () => void): CaptureButton {
   const element = document.createElement("button");
   element.type = "button";
   element.className = "braintot-button";
-  element.title = "Lưu vào QuizKard (kéo lên/xuống để đổi vị trí)";
+  element.title = TITLE_DEFAULT;
 
   const iconWrap = document.createElement("span");
   iconWrap.className = "braintot-button__icon-wrap";
@@ -161,17 +203,31 @@ export function createCaptureButton(onClick: () => void): CaptureButton {
 
   let state: CaptureButtonState = "idle";
   let linkStatus: "linked" | "expired" | "unlinked" = "linked";
+  let tooLong = false;
   let skipNextClick = false;
   element.addEventListener("click", () => {
     if (skipNextClick) {
       skipNextClick = false;
       return;
     }
-    if (state === "idle") onClick();
+    if (state === "idle" && !tooLong) onClick();
   });
 
   const render = () => {
     element.dataset.state = state;
+    if (tooLong) {
+      element.dataset.tooLong = "true";
+      element.dataset.tooltip = TOOLTIP_TOO_LONG;
+      element.setAttribute("aria-disabled", "true");
+      element.title = "";
+      label.textContent = LABEL_IDLE;
+      element.disabled = false;
+      return;
+    }
+    delete element.dataset.tooLong;
+    delete element.dataset.tooltip;
+    element.removeAttribute("aria-disabled");
+    element.title = TITLE_DEFAULT;
     label.textContent =
       state === "saved"
         ? LABEL_SAVED
@@ -195,6 +251,11 @@ export function createCaptureButton(onClick: () => void): CaptureButton {
     setLinkStatus(next) {
       if (next === linkStatus) return;
       linkStatus = next;
+      render();
+    },
+    setTooLong(next) {
+      if (next === tooLong) return;
+      tooLong = next;
       render();
     },
     suppressNextClick() {
