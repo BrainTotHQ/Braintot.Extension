@@ -1,0 +1,194 @@
+name: Release - bump version, tag, package
+
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Version part to increase'
+        type: choice
+        required: true
+        default: patch
+        options:
+          - patch
+          - minor
+          - major
+      release_notes:
+        description: 'Release notes for this build (optional; auto-generated if empty)'
+        required: false
+        default: ''
+
+permissions:
+  contents: write
+  statuses: write
+
+jobs:
+  verify:
+    name: Typecheck, lint, and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare WXT types
+        run: pnpm prepare
+
+      - name: Run typecheck, lint, and tests
+        run: |
+          pnpm compile
+          pnpm lint
+          pnpm test
+
+  bump:
+    name: Bump version and tag
+    needs: verify
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.bump.outputs.version }}
+      tag: ${{ steps.bump.outputs.tag }}
+      commit_sha: ${{ steps.commit.outputs.commit_sha }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - name: Compute and write the new version
+        id: bump
+        env:
+          BUMP_TYPE: ${{ inputs.bump }}
+        run: |
+          node -e '
+            const fs = require("node:fs");
+            const pkg = JSON.parse(fs.readFileSync("package.json", "utf8"));
+            const parts = String(pkg.version).split(".").map(Number);
+            if (parts.length !== 3 || parts.some(Number.isNaN)) {
+              throw new Error(`Invalid semver in package.json: ${pkg.version}`);
+            }
+            let [major, minor, patch] = parts;
+            switch (process.env.BUMP_TYPE) {
+              case "major": major += 1; minor = 0; patch = 0; break;
+              case "minor": minor += 1; patch = 0; break;
+              case "patch": patch += 1; break;
+              default: throw new Error(`Unsupported bump type: ${process.env.BUMP_TYPE}`);
+            }
+            const next = `${major}.${minor}.${patch}`;
+            pkg.version = next;
+            fs.writeFileSync("package.json", JSON.stringify(pkg, null, 2) + "\n");
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, `version=${next}\ntag=v${next}\n`);
+          '
+
+      - name: Commit, tag and push
+        id: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add package.json
+          git commit -m "chore(release): ${{ steps.bump.outputs.tag }}"
+          commit_sha=$(git rev-parse HEAD)
+          echo "commit_sha=$commit_sha" >> "$GITHUB_OUTPUT"
+          git tag "${{ steps.bump.outputs.tag }}"
+          git push origin main "${{ steps.bump.outputs.tag }}"
+
+      - name: Set commit status to pending
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api "repos/${{ github.repository }}/statuses/${{ steps.commit.outputs.commit_sha }}" \
+            -f state=pending \
+            -f context="QuizKard Extension Release" \
+            -f description="Building & publishing release ${{ steps.bump.outputs.tag }}..." \
+            -f target_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+  build-and-release:
+    name: Build Chrome zip and publish GitHub Release
+    needs: bump
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.bump.outputs.tag }}
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Prepare and package Chrome MV3 zip
+        run: |
+          pnpm prepare
+          pnpm zip
+          tag="${{ needs.bump.outputs.tag }}"
+          built_zip=$(ls .output/*-chrome.zip | head -n 1)
+          if [ -z "$built_zip" ] || [ ! -f "$built_zip" ]; then
+            echo "::error::Chrome zip artifact not found in .output/"
+            exit 1
+          fi
+          cp "$built_zip" "quizkard-extension-${tag}-chrome.zip"
+
+      - name: Save Chrome zip as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-chrome-zip
+          path: quizkard-extension-*-chrome.zip
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTES: ${{ inputs.release_notes }}
+        run: |
+          tag="${{ needs.bump.outputs.tag }}"
+          asset="quizkard-extension-${tag}-chrome.zip"
+          if [ -n "$NOTES" ]; then
+            printf '%s\n' "$NOTES" > release-notes.md
+            gh release create "$tag" "$asset" --repo "${{ github.repository }}" \
+              --title "$tag" --notes-file release-notes.md
+          else
+            gh release create "$tag" "$asset" --repo "${{ github.repository }}" \
+              --title "$tag" --generate-notes
+          fi
+
+  notify-status:
+    name: Update commit status
+    needs: [bump, build-and-release]
+    if: always() && needs.bump.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Update commit status
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ "${{ needs.build-and-release.result }}" = "success" ]; then
+            gh api "repos/${{ github.repository }}/statuses/${{ needs.bump.outputs.commit_sha }}" \
+              -f state=success \
+              -f context="QuizKard Extension Release" \
+              -f description="Release ${{ needs.bump.outputs.tag }} published on GitHub Releases" \
+              -f target_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          else
+            gh api "repos/${{ github.repository }}/statuses/${{ needs.bump.outputs.commit_sha }}" \
+              -f state=failure \
+              -f context="QuizKard Extension Release" \
+              -f description="Release ${{ needs.bump.outputs.tag }} failed" \
+              -f target_url="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          fi
