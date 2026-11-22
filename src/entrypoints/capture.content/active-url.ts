@@ -8,10 +8,15 @@
 
 import { normalizeCaptureUrl } from "../../domain/url-canonicalizer";
 
+/** Giới hạn thời lượng video hỗ trợ (3 phút = 180 giây). */
+export const MAX_CAPTURE_DURATION_SEC = 180;
+
 const TIKTOK_MEDIA_HREF = /\/@[^/?#]+\/(?:video|photo)\/\d{10,}/;
 const TIKTOK_AUTHOR_HREF = /^\/(@[A-Za-z0-9._-]+)(?:[/?#]|$)/;
 const XGWRAPPER_ID = /xgwrapper-\d+-(\d{15,})/;
 const LONG_NUMERIC_ID = /\b(\d{18,20})\b/;
+const DURATION_PART = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/;
+const SEEKBAR_PAIR = /\d{1,2}:\d{2}(?::\d{2})?\s*\/\s*(\d{1,2}:\d{2}(?::\d{2})?)/;
 
 const FEED_ITEM_SELECTORS = [
   'article[data-e2e="recommend-list-item-container"]',
@@ -157,4 +162,121 @@ export function resolveActiveCaptureUrl(doc: Document, href: string): string | n
   if (normalizeCaptureUrl(href)) return href;
   if (isTikTokHost(href)) return extractTikTokFeedUrl(doc);
   return null;
+}
+
+/** Parse chuỗi thời lượng dạng `MM:SS`, `H:MM:SS` hoặc cặp seekbar `00:02 / 07:11` sang số giây. */
+export function parseDurationText(raw: string | null | undefined): number | null {
+  if (!raw) return null;
+  const trimmed = raw.trim();
+  const pairTotal = SEEKBAR_PAIR.exec(trimmed)?.[1];
+  const target = pairTotal ?? trimmed;
+  const match = DURATION_PART.exec(target);
+  if (!match) return null;
+  const first = Number(match[1]);
+  const second = Number(match[2]);
+  const third = match[3] !== undefined ? Number(match[3]) : null;
+  if (third !== null) return first * 3600 + second * 60 + third;
+  return first * 60 + second;
+}
+
+function readValidVideoDuration(video: HTMLVideoElement | null): number | null {
+  if (!video) return null;
+  const d = video.duration;
+  if (d === Number.POSITIVE_INFINITY) return MAX_CAPTURE_DURATION_SEC + 1;
+  return Number.isFinite(d) && d > 0 ? d : null;
+}
+
+/** Chọn thẻ `<video>` đang hiển thị lớn nhất trong viewport trong phạm vi `scope`. */
+function pickVisibleVideo(scope: ParentNode, viewHeight: number): HTMLVideoElement | null {
+  const videos = Array.from(scope.querySelectorAll<HTMLVideoElement>("video"));
+  if (videos.length === 0) return null;
+  if (videos.length === 1) return videos[0] ?? null;
+
+  let best: HTMLVideoElement | null = null;
+  let bestScore = -1;
+  for (const video of videos) {
+    const rect = video.getBoundingClientRect();
+    const visibleH = Math.max(0, Math.min(viewHeight, rect.bottom) - Math.max(0, rect.top));
+    const playingBonus = !video.paused && video.readyState >= 2 ? 10_000 : 0;
+    const score = playingBonus + visibleH * Math.max(1, rect.width);
+    if (score > bestScore) {
+      bestScore = score;
+      best = video;
+    }
+  }
+  return best ?? videos[0] ?? null;
+}
+
+function isYouTubeHost(href: string): boolean {
+  try {
+    const host = new URL(href).hostname.replace(/^www\./, "");
+    return host === "youtu.be" || host.endsWith("youtube.com");
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Đọc thời lượng (giây) của video đang phát trên YouTube / TikTok / Facebook Reels.
+ * Trả `null` nếu là photo slideshow hoặc chưa có metadata (tránh chặn nhầm khi chưa nạp xong).
+ */
+export function resolveActiveVideoDurationSec(doc: Document, href: string): number | null {
+  const viewHeight = doc.defaultView?.innerHeight || 900;
+
+  if (isYouTubeHost(href)) {
+    let pathname = "";
+    try {
+      pathname = new URL(href).pathname;
+    } catch {
+      /* giữ rỗng */
+    }
+
+    // YouTube SPA giữ nguyên #movie_player (đã ẩn) trong DOM khi chuyển từ /watch sang /shorts.
+    // Trên /shorts tuyệt đối không fallback sang #movie_player hay .ytp-time-duration của video cũ.
+    if (pathname.startsWith("/shorts/")) {
+      const shortsVideo =
+        doc.querySelector<HTMLVideoElement>("ytd-reel-video-renderer[is-active] video") ??
+        doc.querySelector<HTMLVideoElement>("#shorts-player video");
+      return readValidVideoDuration(shortsVideo);
+    }
+
+    const watchPlayer = doc.querySelector<HTMLElement>("#movie_player");
+    const adShowing = watchPlayer?.classList.contains("ad-showing") ?? false;
+    if (!adShowing) {
+      const mainVideo =
+        watchPlayer?.querySelector<HTMLVideoElement>("video.html5-main-video") ??
+        pickVisibleVideo(doc, viewHeight);
+      const fromVideo = readValidVideoDuration(mainVideo);
+      if (fromVideo !== null) return fromVideo;
+    }
+    const label = (watchPlayer ?? doc).querySelector(".ytp-time-duration")?.textContent;
+    return parseDurationText(label);
+  }
+
+  if (isTikTokHost(href)) {
+    const isDetailPage = /\/@[^/]+\/(?:video|photo)\/\d{10,}/.test(href);
+    const scope: ParentNode = isDetailPage ? doc : (pickActiveFeedContainer(doc) ?? doc);
+    if (isPhotoPost(scope)) return null;
+
+    const video = pickVisibleVideo(scope, viewHeight);
+    const fromVideo = readValidVideoDuration(video);
+    if (fromVideo !== null) return fromVideo;
+
+    // Fallback: đọc thanh thời gian TikTok dạng `00:02 / 07:11`.
+    const timeNodes = scope.querySelectorAll(
+      '[class*="SeekBarTimeContainer"], [class*="TimeContainer"], [data-e2e*="time"]',
+    );
+    for (const node of timeNodes) {
+      const parsed = parseDurationText(node.textContent);
+      if (parsed !== null) return parsed;
+    }
+    return null;
+  }
+
+  // Facebook Reels hoặc trang video khác
+  return readValidVideoDuration(pickVisibleVideo(doc, viewHeight));
+}
+
+export function isDurationTooLong(durationSec: number | null): boolean {
+  return durationSec !== null && durationSec > MAX_CAPTURE_DURATION_SEC;
 }

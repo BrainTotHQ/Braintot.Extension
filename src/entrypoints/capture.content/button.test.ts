@@ -10,27 +10,27 @@ import { createCaptureButton } from "./button";
 const label = (button: ReturnType<typeof createCaptureButton>) =>
   button.element.querySelector(".braintot-button__label")?.textContent;
 
-describe("nút Lưu vào QuizKard theo trạng thái liên kết (spec/62)", () => {
-  it("đã liên kết → nhãn lưu", () => {
+describe("nút Lưu QuizKard theo trạng thái liên kết (spec/62)", () => {
+  it("đã liên kết → nhãn lưu ngắn gọn", () => {
     const button = createCaptureButton(() => {});
-    expect(label(button)).toBe("Lưu vào QuizKard");
+    expect(label(button)).toBe("Lưu");
   });
 
-  it("chưa liên kết → nhãn mời đồng bộ với QuizKard Web, vẫn bấm được", () => {
+  it("chưa liên kết → nhãn đăng nhập, vẫn bấm được", () => {
     const onClick = vi.fn();
     const button = createCaptureButton(onClick);
     button.setLinkStatus("unlinked");
-    expect(label(button)).toBe("Đồng bộ với QuizKard Web");
+    expect(label(button)).toBe("Đăng nhập");
     button.element.click();
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 
-  it("hết hạn → nhãn liên kết lại; liên kết xong → quay về nhãn lưu", () => {
+  it("hết hạn → nhãn kết nối lại; liên kết xong → quay về nhãn lưu", () => {
     const button = createCaptureButton(() => {});
     button.setLinkStatus("expired");
-    expect(label(button)).toBe("Liên kết lại QuizKard Web");
+    expect(label(button)).toBe("Kết nối lại");
     button.setLinkStatus("linked");
-    expect(label(button)).toBe("Lưu vào QuizKard");
+    expect(label(button)).toBe("Lưu");
   });
 
   it("suppressNextClick chặn đúng 1 lần click ngay sau khi kéo thả vị trí", () => {
@@ -39,6 +39,25 @@ describe("nút Lưu vào QuizKard theo trạng thái liên kết (spec/62)", () 
     button.suppressNextClick();
     button.element.click();
     expect(onClick).not.toHaveBeenCalled();
+    button.element.click();
+    expect(onClick).toHaveBeenCalledTimes(1);
+  });
+
+  it("video > 3 phút → giữ nhãn 'Lưu' nhưng bị khóa kèm tooltip, không gọi onClick", () => {
+    const onClick = vi.fn();
+    const button = createCaptureButton(onClick);
+    button.setTooLong(true);
+    expect(label(button)).toBe("Lưu");
+    expect(button.element.getAttribute("aria-disabled")).toBe("true");
+    expect(button.element.dataset.tooLong).toBe("true");
+    expect(button.element.dataset.tooltip).toContain("3 phút");
+    button.element.click();
+    expect(onClick).not.toHaveBeenCalled();
+
+    // Sang video ngắn hợp lệ → mở khóa lại.
+    button.setTooLong(false);
+    expect(label(button)).toBe("Lưu");
+    expect(button.element.getAttribute("aria-disabled")).toBeNull();
     button.element.click();
     expect(onClick).toHaveBeenCalledTimes(1);
   });

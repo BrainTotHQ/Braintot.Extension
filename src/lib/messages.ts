@@ -39,7 +39,11 @@ export type LinkWebResponse = { ok: true } | { ok: false; reason: "unreachable" 
 /** Content script `web-session` báo session mới nhất trên web về background (spec/62). */
 export const MSG_WEB_SESSION = "braintot/web-session";
 
-/** Popup hỏi content script URL video đang phát trên tab (vd: TikTok For You feed). */
+/** Popup hỏi content script URL video đang phát trên tab (vd: TikTok For You feed) và trạng thái quá 3 phút. */
 export const MSG_GET_ACTIVE_URL = "braintot/get-active-url";
 
-export type ActiveUrlResponse = { url: string | null };
+export type ActiveUrlResponse = {
+  url: string | null;
+  durationSec?: number | null;
+  tooLong?: boolean;
+};
