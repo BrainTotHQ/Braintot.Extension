@@ -16,6 +16,8 @@ import {
   initBackendAuth,
   isLinked,
   parseAuthSession,
+  reloadAuth,
+  SESSION_KEY,
 } from "../lib/backend-auth";
 import { getWebBaseUrl } from "../lib/backend-config";
 import { createAutoSync } from "../lib/auto-sync";
@@ -154,19 +156,15 @@ export default defineBackground(() => {
   // hàng đợi có link MỚI và khi SW dậy lại còn link pending/processing kẹt.
   const autoSync = createAutoSync({ sync: () => syncQueue({ store }) });
 
-  // Nạp phiên đăng nhập từ storage — lỗi chỉ tắt sync, không ảnh hưởng capture/badge.
-  void initBackendAuth().catch(() => {
-    /* noop */
-  });
-
-  // Badge init khi SW khởi động — SW mới dậy không giữ text badge cũ, set lại
-  // từ số link hiện có trong storage. Không await: không chặn start; lỗi badge
-  // init không được để thành unhandled rejection (noop, luồng lưu không phụ thuộc).
-  void store
-    .queueCount()
-    .then(updateBadge)
+  // Nạp phiên đăng nhập từ storage rồi mới khởi tạo badge: chưa đăng nhập (hoặc đã đăng xuất)
+  // thì xoá badge thay vì giữ số của tài khoản trước. Không await để không chặn đăng ký listener.
+  void initBackendAuth()
+    .then(async () => {
+      const count = isLinked() ? await store.queueCount() : 0;
+      await updateBadge(count);
+    })
     .catch(() => {
-      /* noop — badge init lỗi không ảnh hưởng handler message */
+      /* noop — auth/badge init lỗi không ảnh hưởng handler message */
     });
 
   // Drain khi SW dậy lại: link PENDING (chưa gửi) và PROCESSING (cần kéo trạng thái
@@ -178,18 +176,37 @@ export default defineBackground(() => {
       /* noop */
     });
 
-  // Popup ghi QueueStore TRỰC TIẾP vào storage (không qua message — DECIDE
-  // E5), nên badge phải theo dõi storage thay vì chỉ luồng message: mỗi lần
-  // key queue đổi (từ nguồn nào cũng được), đếm lại từ newValue. Auto-sync
-  // cũng cắm vào đây — trigger chỉ khi có link MỚI (guard độ dài trong
-  // createAutoSync, write trạng thái của chính sync không kích hoạt).
+  // Theo dõi storage.local cho cả phiên đăng nhập lẫn hàng đợi:
+  // - Khi popup đăng xuất (SESSION_KEY bị xoá): reloadAuth() + xoá badge ngay lập tức.
+  // - Khi liên kết tài khoản mới (SESSION_KEY đổi): reloadAuth() + syncQueue kéo hàng đợi mới.
+  // - Khi hàng đợi đổi (STORAGE_KEY): chỉ hiện badge khi còn phiên linked, đồng thời trigger autoSync.
   browser.storage.onChanged.addListener((changes, areaName) => {
-    if (areaName !== "local" || !(STORAGE_KEY in changes)) return;
-    const change = changes[STORAGE_KEY];
-    void updateBadge(countFromQueueValue(change.newValue)).catch(() => {
-      /* noop — badge update lỗi không ảnh hưởng luồng ghi */
-    });
-    autoSync.onQueueChanged(change.oldValue, change.newValue);
+    if (areaName !== "local") return;
+    if (SESSION_KEY in changes) {
+      void reloadAuth()
+        .then(async () => {
+          if (!isLinked()) {
+            await updateBadge(0);
+            return;
+          }
+          const count = await store.queueCount();
+          await updateBadge(count);
+          void syncQueue({ store }).catch(() => {
+            /* noop — sync sau khi đổi phiên lỗi không ảnh hưởng */
+          });
+        })
+        .catch(() => {
+          /* noop */
+        });
+    }
+    if (STORAGE_KEY in changes) {
+      const change = changes[STORAGE_KEY];
+      const nextCount = isLinked() ? countFromQueueValue(change.newValue) : 0;
+      void updateBadge(nextCount).catch(() => {
+        /* noop — badge update lỗi không ảnh hưởng luồng ghi */
+      });
+      autoSync.onQueueChanged(change.oldValue, change.newValue);
+    }
   });
 
   // Poll nền (spec/61): link do AI xử lý xong trên server thì extension kéo trạng thái về,

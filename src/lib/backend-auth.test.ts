@@ -101,13 +101,28 @@ describe("backend-auth", () => {
     expect(auth.uidFromIdToken("rác")).toBeNull();
   });
 
-  it("signOut xoá phiên", async () => {
+  it("signOut xoá phiên và cache hàng đợi local của tài khoản cũ", async () => {
     storageData.set("braintot:auth-session", session("u1"));
+    storageData.set("braintot:pending-links", { a: { id: "a" } });
     const auth = await load();
     await auth.initBackendAuth();
     await auth.signOut();
     expect(auth.getLinkStatus()).toBe("unlinked");
     expect(storageData.has("braintot:auth-session")).toBe(false);
+    expect(storageData.has("braintot:pending-links")).toBe(false);
+  });
+
+  it("saveAuthSession đổi sang uid khác thì xoá cache hàng đợi cũ, cùng uid thì giữ nguyên", async () => {
+    storageData.set("braintot:auth-session", session("u1"));
+    storageData.set("braintot:pending-links", { a: { id: "a" } });
+    const auth = await load();
+    await auth.initBackendAuth();
+
+    await auth.saveAuthSession(session("u1", Date.now() + 24 * HOUR));
+    expect(storageData.has("braintot:pending-links")).toBe(true);
+
+    await auth.saveAuthSession(session("u2"));
+    expect(storageData.has("braintot:pending-links")).toBe(false);
   });
 });
 
