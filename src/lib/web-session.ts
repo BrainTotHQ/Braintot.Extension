@@ -1,6 +1,8 @@
 /** Đọc session do web lưu (spec/62); dùng bởi content script `web-session`. */
 
 const WEB_SESSION_KEY = "braintot.session";
+/** Sự kiện DOM do web bắn trong cùng tab mỗi khi saveSession/clearSession chạy. */
+export const WEB_SESSION_CHANGED_EVENT = "braintot:session-changed";
 
 /** Đọc session web ra dạng `{accessToken, expiresAt, email, uid}`; thiếu/hỏng → null. */
 export function readWebSession(
