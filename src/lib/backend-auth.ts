@@ -11,7 +11,9 @@
 
 import { browser } from "wxt/browser";
 
-const SESSION_KEY = "braintot:auth-session";
+import { STORAGE_KEY as QUEUE_STORAGE_KEY } from "./queue-store";
+
+export const SESSION_KEY = "braintot:auth-session";
 /** Khoá cũ (spec/17: Firebase ID token + refresh token): không dùng được nữa, xoá khi gặp. */
 const LEGACY_AUTH_KEY = "braintot:auth-google";
 
@@ -85,16 +87,20 @@ export function reloadAuth(): Promise<void> {
   return initBackendAuth();
 }
 
-/** Lưu phiên mới nhận từ web (ghi đè phiên hiện tại). */
+/** Lưu phiên mới nhận từ web (ghi đè phiên hiện tại). Đổi sang uid khác thì xoá cache hàng đợi cũ. */
 export async function saveAuthSession(next: AuthSession): Promise<void> {
+  const previousUid = session?.uid ?? null;
   session = next;
   await browser.storage.local.set({ [SESSION_KEY]: next });
+  if (previousUid && next.uid && previousUid !== next.uid) {
+    await browser.storage.local.remove(QUEUE_STORAGE_KEY);
+  }
 }
 
-/** Đăng xuất: xoá phiên cục bộ. Hàng đợi local được giữ nguyên. */
+/** Đăng xuất: xoá phiên cục bộ và cache hàng đợi của tài khoản cũ (badge icon về trống). */
 export async function signOut(): Promise<void> {
   session = null;
-  await browser.storage.local.remove([SESSION_KEY, LEGACY_AUTH_KEY]);
+  await browser.storage.local.remove([SESSION_KEY, LEGACY_AUTH_KEY, QUEUE_STORAGE_KEY]);
 }
 
 export type LinkStatus = "linked" | "expired" | "unlinked";

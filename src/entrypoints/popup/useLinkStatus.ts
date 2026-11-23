@@ -4,8 +4,15 @@
  */
 
 import { useEffect, useState } from "react";
+import { browser } from "wxt/browser";
 
-import { getLinkStatus, initBackendAuth, type LinkStatus } from "../../lib/backend-auth";
+import {
+  getLinkStatus,
+  initBackendAuth,
+  reloadAuth,
+  SESSION_KEY,
+  type LinkStatus,
+} from "../../lib/backend-auth";
 
 export function useLinkStatus(): LinkStatus | "loading" {
   const [status, setStatus] = useState<LinkStatus | "loading">("loading");
@@ -14,8 +21,19 @@ export function useLinkStatus(): LinkStatus | "loading" {
     void initBackendAuth().finally(() => {
       if (!cancelled) setStatus(getLinkStatus());
     });
+    const onStorageChanged = (
+      changes: Record<string, unknown>,
+      areaName: string,
+    ): void => {
+      if (areaName !== "local" || !(SESSION_KEY in changes)) return;
+      void reloadAuth().finally(() => {
+        if (!cancelled) setStatus(getLinkStatus());
+      });
+    };
+    browser.storage?.onChanged?.addListener(onStorageChanged);
     return () => {
       cancelled = true;
+      browser.storage?.onChanged?.removeListener(onStorageChanged);
     };
   }, []);
   return status;
