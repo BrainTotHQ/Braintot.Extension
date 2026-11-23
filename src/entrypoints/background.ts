@@ -15,9 +15,11 @@ import {
   adoptAuthSession,
   initBackendAuth,
   isLinked,
+  isSyncAvailable,
   parseAuthSession,
   reloadAuth,
   SESSION_KEY,
+  signOut,
 } from "../lib/backend-auth";
 import { getWebBaseUrl } from "../lib/backend-config";
 import { createAutoSync } from "../lib/auto-sync";
@@ -135,13 +137,31 @@ async function handleCaptureSave(
   }
 }
 
-/** Nhận session từ content script `web-session`; sai origin / sai hình / hết hạn thì bỏ qua. */
-async function handleWebSession(message: unknown, senderUrl: string | undefined): Promise<{ ok: boolean }> {
+/**
+ * Nhận session từ content script `web-session`:
+ * - Sai origin hoặc tab ẩn danh (Incognito) → bỏ qua.
+ * - `session === null`: web đã đăng xuất → xoá phiên, cache hàng đợi và badge của extension.
+ * - Có session hợp lệ → `adoptAuthSession`.
+ */
+async function handleWebSession(
+  message: unknown,
+  sender: { url?: string; tab?: { incognito?: boolean } },
+): Promise<{ ok: boolean }> {
   try {
-    if (!senderUrl || new URL(senderUrl).origin !== new URL(getWebBaseUrl()).origin) {
+    if (sender.tab?.incognito) return { ok: false };
+    if (!sender.url || new URL(sender.url).origin !== new URL(getWebBaseUrl()).origin) {
       return { ok: false };
     }
-    const session = parseAuthSession((message as { session?: unknown }).session);
+    const rawSession = (message as { session?: unknown }).session;
+    if (rawSession === null) {
+      await initBackendAuth();
+      if (isSyncAvailable()) {
+        await signOut();
+        await updateBadge(0);
+      }
+      return { ok: true };
+    }
+    const session = parseAuthSession(rawSession);
     if (!session) return { ok: false };
     return { ok: await adoptAuthSession(session) };
   } catch {
@@ -230,7 +250,7 @@ export default defineBackground(() => {
   browser.runtime.onMessage.addListener(
     (
       message: unknown,
-      sender: { url?: string },
+      sender: { url?: string; tab?: { incognito?: boolean } },
     ): Promise<CaptureSaveResponse | SyncNowResponse | LinkWebResponse | { ok: boolean }> | undefined => {
       // Message khác (hoặc méo hình) → không phản hồi, nhường listener khác.
       if (
@@ -243,6 +263,7 @@ export default defineBackground(() => {
       if (typed.type === MSG_CAPTURE_SAVE) {
         return handleCaptureSave(message as CaptureSaveRequest, store);
       }
+      
       if (typed.type === MSG_SYNC_NOW) {
         // Popup chủ động yêu cầu sync — chạy và trả kết quả.
         return syncQueue({ store }).catch<SyncNowResponse>(() => ({
@@ -250,9 +271,10 @@ export default defineBackground(() => {
           reason: "unreachable",
         }));
       }
+
       if (typed.type === MSG_WEB_SESSION) {
-        // Content script trên web báo session mới nhất (spec/62). Chỉ tin sender đúng origin web.
-        return handleWebSession(message, sender.url);
+        // Content script trên web báo session mới nhất hoặc vừa đăng xuất (spec/62).
+        return handleWebSession(message, sender);
       }
       if (typed.type === MSG_LINK_WEB) {
         // Mở tab trang bắt tay trên web (spec/17).

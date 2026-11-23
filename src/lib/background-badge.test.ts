@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const {
   storageData,
   storageListeners,
+  messageListeners,
   setBadgeTextMock,
   setBadgeBackgroundColorMock,
   syncQueueMock,
@@ -10,6 +11,12 @@ const {
   storageData: new Map<string, unknown>(),
   storageListeners: new Set<
     (changes: Record<string, { oldValue?: unknown; newValue?: unknown }>, areaName: string) => void
+  >(),
+  messageListeners: new Set<
+    (
+      message: unknown,
+      sender: { url?: string; tab?: { incognito?: boolean } },
+    ) => Promise<unknown> | undefined
   >(),
   setBadgeTextMock: vi.fn(async (_details: { text: string }) => {}),
   setBadgeBackgroundColorMock: vi.fn(async (_details: { color: string }) => {}),
@@ -31,7 +38,18 @@ vi.mock("wxt/browser", () => ({
       onAlarm: { addListener: vi.fn() },
     },
     runtime: {
-      onMessage: { addListener: vi.fn() },
+      onMessage: {
+        addListener: vi.fn(
+          (
+            cb: (
+              message: unknown,
+              sender: { url?: string; tab?: { incognito?: boolean } },
+            ) => Promise<unknown> | undefined,
+          ) => {
+            messageListeners.add(cb);
+          },
+        ),
+      },
       onMessageExternal: { addListener: vi.fn() },
     },
     storage: {
@@ -96,6 +114,7 @@ async function startBackground(): Promise<void> {
 beforeEach(() => {
   storageData.clear();
   storageListeners.clear();
+  messageListeners.clear();
   setBadgeTextMock.mockClear();
   setBadgeBackgroundColorMock.mockClear();
   syncQueueMock.mockClear();
@@ -145,5 +164,46 @@ describe("background badge theo trạng thái đăng nhập", () => {
     await flushMicrotasks();
 
     expect(syncQueueMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("web đăng xuất (MSG_WEB_SESSION với session: null) → đăng xuất extension, xoá queue và badge", async () => {
+    storageData.set("braintot:auth-session", VALID_SESSION);
+    storageData.set("braintot:pending-links", SAMPLE_QUEUE);
+    await startBackground();
+    expect(setBadgeTextMock).toHaveBeenLastCalledWith({ text: "2" });
+
+    const [onMessage] = Array.from(messageListeners);
+    const res = await onMessage!(
+      { type: "braintot/web-session", session: null },
+      { url: "https://braintot.tonythaniel.com/flashcards", tab: { incognito: false } },
+    );
+
+    expect(res).toEqual({ ok: true });
+    expect(storageData.has("braintot:auth-session")).toBe(false);
+    expect(storageData.has("braintot:pending-links")).toBe(false);
+    expect(setBadgeTextMock).toHaveBeenLastCalledWith({ text: "" });
+  });
+
+  it("tab ẩn danh (Incognito) hoặc origin lạ gửi session: null → bỏ qua, giữ nguyên phiên", async () => {
+    storageData.set("braintot:auth-session", VALID_SESSION);
+    storageData.set("braintot:pending-links", SAMPLE_QUEUE);
+    await startBackground();
+    expect(setBadgeTextMock).toHaveBeenLastCalledWith({ text: "2" });
+
+    const [onMessage] = Array.from(messageListeners);
+    const incognitoRes = await onMessage!(
+      { type: "braintot/web-session", session: null },
+      { url: "https://braintot.tonythaniel.com/flashcards", tab: { incognito: true } },
+    );
+    const evilRes = await onMessage!(
+      { type: "braintot/web-session", session: null },
+      { url: "https://evil.example.com/", tab: { incognito: false } },
+    );
+
+    expect(incognitoRes).toEqual({ ok: false });
+    expect(evilRes).toEqual({ ok: false });
+    expect(storageData.has("braintot:auth-session")).toBe(true);
+    expect(storageData.has("braintot:pending-links")).toBe(true);
+    expect(setBadgeTextMock).toHaveBeenLastCalledWith({ text: "2" });
   });
 });
