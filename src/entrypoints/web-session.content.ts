@@ -13,7 +13,7 @@ import { readWebSession, WEB_SESSION_CHANGED_EVENT } from "../lib/web-session";
 const POLL_MS = 5_000;
 
 export default defineContentScript({
-  matches: ["https://braintot.tonythaniel.com/*"],
+  matches: ["https://quizkard.tonythaniel.com/*"],
   main() {
     // `undefined` = chưa đồng bộ lần nào (kể cả lúc tab mở ra đã đăng xuất vẫn báo 1 lần).
     let lastRaw: string | null | undefined = undefined;

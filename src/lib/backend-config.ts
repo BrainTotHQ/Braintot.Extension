@@ -36,7 +36,7 @@ const pickAny = (suffix: string): string =>
 
 /** Base URL web app — nút "Xem trên Web" mở bài học tại đây. */
 export const getWebBaseUrl = (): string =>
-  pickAny("WEB_URL").replace(/\/+$/, "") || "https://braintot.tonythaniel.com";
+  pickAny("WEB_URL").replace(/\/+$/, "") || "https://quizkard.tonythaniel.com";
 
 /**
  * VideoId theo keyspace engine/web (platforms.py, web `resolveVideoIdentity`): YouTube raw 11 ký tự,
@@ -85,6 +85,6 @@ export function engineVideoId(link: {
 export const webFlashcardsUrl = (videoId: string): string =>
   `${getWebBaseUrl()}/flashcards?video=${encodeURIComponent(videoId)}`;
 
-/** Base URL backend NestJS — prod là https://braintot.tonythaniel.com. */
+/** Base URL backend NestJS — prod là https://quizkard.tonythaniel.com. */
 export const backendBaseUrl = (): string =>
-  pickAny("BACKEND_URL").replace(/\/+$/, "") || "https://braintot.tonythaniel.com";
+  pickAny("BACKEND_URL").replace(/\/+$/, "") || "https://quizkard.tonythaniel.com";

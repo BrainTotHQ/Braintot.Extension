@@ -24,7 +24,7 @@ Extension không tự đăng nhập: nó **nhận session từ web BrainTot qua 
 
 ## Backend
 
-Mặc định: web `https://braintot-web-jsgeeh2ixa-de.a.run.app`, backend `https://braintot.tonythaniel.com`. Đổi được trong `chrome.storage` qua key `WEB_URL` / `BACKEND_URL` (prod backend: `https://braintot.tonythaniel.com`). Muốn demo trọn vẹn cần backend đang chạy (xem repo `braintot-backend`).
+Mặc định: web & backend `https://quizkard.tonythaniel.com`. Đổi được trong `chrome.storage` qua key `WEB_URL` / `BACKEND_URL` (prod backend: `https://quizkard.tonythaniel.com`). Muốn demo trọn vẹn cần backend đang chạy (xem repo `braintot-backend`).
 
 ## Chạy thử
 

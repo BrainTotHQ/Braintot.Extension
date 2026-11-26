@@ -22,7 +22,7 @@ export default defineConfig({
     },
     permissions: ["activeTab", "storage", "alarms"],
     // Trang bắt tay đăng nhập: chỉ web origin được gửi message về extension.
-    externally_connectable: { matches: ["https://braintot.tonythaniel.com/*"] },
+    externally_connectable: { matches: ["https://quizkard.tonythaniel.com/*"] },
     host_permissions: [
       "*://*.youtube.com/*",
       "*://*.tiktok.com/*",
@@ -30,7 +30,7 @@ export default defineConfig({
       // Backend NestJS (sync pending-links) - spec 16 T5.
       "http://localhost:3001/*",
       "http://127.0.0.1:3001/*",
-      "https://braintot.tonythaniel.com/*",
+      "https://quizkard.tonythaniel.com/*",
     ],
   },
 });

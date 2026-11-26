@@ -264,12 +264,12 @@ describe("App — popup lưu trang hiện tại + hàng đợi", () => {
     }
 
     // Mọi nền tảng mở /flashcards?video=<videoId theo engine> (spec/57)
-    expect(openedUrls).toContain("https://braintot.tonythaniel.com/flashcards?video=uSjtxnvCacA");
+    expect(openedUrls).toContain("https://quizkard.tonythaniel.com/flashcards?video=uSjtxnvCacA");
     expect(openedUrls).toContain(
-      "https://braintot.tonythaniel.com/flashcards?video=tt_7628629210445204756",
+      "https://quizkard.tonythaniel.com/flashcards?video=tt_7628629210445204756",
     );
     expect(openedUrls).toContain(
-      "https://braintot.tonythaniel.com/flashcards?video=fb_2431405740998979",
+      "https://quizkard.tonythaniel.com/flashcards?video=fb_2431405740998979",
     );
 
     // Link pending: chỉ chip chờ, không có nút web cho link chưa xử lý.
@@ -413,7 +413,7 @@ describe("App — popup lưu trang hiện tại + hàng đợi", () => {
     fireEvent.click(screen.getByTestId("open-web"));
     expect(tabsCreate).toHaveBeenCalledTimes(1);
     expect(tabsCreate.mock.calls[0]?.[0]).toEqual({
-      url: "https://braintot.tonythaniel.com",
+      url: "https://quizkard.tonythaniel.com",
       active: true,
     });
     await act(async () => {});

@@ -175,7 +175,7 @@ describe("background badge theo trạng thái đăng nhập", () => {
     const [onMessage] = Array.from(messageListeners);
     const res = await onMessage!(
       { type: "braintot/web-session", session: null },
-      { url: "https://braintot.tonythaniel.com/flashcards", tab: { incognito: false } },
+      { url: "https://quizkard.tonythaniel.com/flashcards", tab: { incognito: false } },
     );
 
     expect(res).toEqual({ ok: true });
@@ -193,7 +193,7 @@ describe("background badge theo trạng thái đăng nhập", () => {
     const [onMessage] = Array.from(messageListeners);
     const incognitoRes = await onMessage!(
       { type: "braintot/web-session", session: null },
-      { url: "https://braintot.tonythaniel.com/flashcards", tab: { incognito: true } },
+      { url: "https://quizkard.tonythaniel.com/flashcards", tab: { incognito: true } },
     );
     const evilRes = await onMessage!(
       { type: "braintot/web-session", session: null },
