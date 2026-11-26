@@ -16,23 +16,23 @@ describe("webFlashcardsUrl", () => {
   });
 
   it("có env PUBLIC_WEB_URL → /flashcards?video=<id>", () => {
-    envBag.PUBLIC_WEB_URL = "https://braintot.tonythaniel.com";
+    envBag.PUBLIC_WEB_URL = "https://quizkard.tonythaniel.com";
     expect(webFlashcardsUrl("abc123")).toBe(
-      "https://braintot.tonythaniel.com/flashcards?video=abc123",
+      "https://quizkard.tonythaniel.com/flashcards?video=abc123",
     );
   });
 
   it("không có env → mặc định prod domain", () => {
-    expect(getWebBaseUrl()).toBe("https://braintot.tonythaniel.com");
+    expect(getWebBaseUrl()).toBe("https://quizkard.tonythaniel.com");
     expect(webFlashcardsUrl("xYz_-9")).toBe(
-      "https://braintot.tonythaniel.com/flashcards?video=xYz_-9",
+      "https://quizkard.tonythaniel.com/flashcards?video=xYz_-9",
     );
   });
 
   it("videoId được encodeURIComponent, base URL bỏ dấu / cuối", () => {
-    envBag.VITE_WEB_URL = "https://braintot.tonythaniel.com/";
+    envBag.VITE_WEB_URL = "https://quizkard.tonythaniel.com/";
     expect(webFlashcardsUrl("a&b=c")).toBe(
-      "https://braintot.tonythaniel.com/flashcards?video=a%26b%3Dc",
+      "https://quizkard.tonythaniel.com/flashcards?video=a%26b%3Dc",
     );
   });
 });
